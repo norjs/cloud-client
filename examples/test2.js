@@ -1,8 +1,8 @@
 
 import debug from 'nor-debug';
-import cloudClass from './index.js';
+import cloudClient from '@sendanor/cloud-client';
 
-cloudClass('http://localhost:3000').then(instance => {
+cloudClient('http://localhost:3000').then(instance => {
 
 	debug.log('instance = ', instance);
 	debug.assert(instance).is('object');

@@ -1,12 +1,12 @@
 
 import debug from 'nor-debug';
-import cloudClass from './index.js';
-import request from './request/index.js';
+import cloudClient from '@sendanor/cloud-client';
+import request from '@sendanor/cloud-client/src/request/index.js';
 
 request.get('http://localhost:3000').then( body => {
 	debug.assert(body).is('object');
 	debug.assert(body.$prototype).is('object');
-	return cloudClass.classFromObject(body.$prototype).then(Class => {
+	return cloudClient.classFromObject(body.$prototype).then(Class => {
 
 		debug.log('Class = ', Class);
 		debug.assert(Class).is('function');

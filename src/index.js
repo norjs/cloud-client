@@ -1,2 +1,2 @@
-import cloudClass from './cloudClass.js'
-export default cloudClass;
+import cloudClient from './cloudClient.js'
+export default cloudClient;
