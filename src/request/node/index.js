@@ -28,11 +28,11 @@ function _request (method, url, body) {
 	return Q.fcall( () => {
 		method = _.toLower(method);
 
-		debug.log('method = ', method)
-		debug.log('url = ', url)
+		//debug.log('method = ', method)
+		//debug.log('url = ', url)
 
 		const options = _parse_url(url);
-		debug.log('options = ', options);
+		//debug.log('options = ', options);
 		debug.assert(options).is('object');
 
 		options.method = method;
@@ -41,7 +41,7 @@ function _request (method, url, body) {
 
 		const protocol = _parseProtocol(options.protocol);
 
-		debug.log('protocol = ', protocol);
+		//debug.log('protocol = ', protocol);
 
 		const protocolImplementation = protocolPicker[protocol];
 
@@ -59,7 +59,7 @@ function _request (method, url, body) {
 
 		/** Response event listener */
 		responseListener = res => {
-			debug.log('got response!');
+			//debug.log('got response!');
 
 			//let redirectLoopCounter = 10;
 
@@ -73,10 +73,10 @@ function _request (method, url, body) {
 
 				let contentType = res.headers['content-type'] || undefined;
 
-				debug.log('contentType = ', contentType);
+				//debug.log('contentType = ', contentType);
 
 				const statusCode = res.statusCode;
-				debug.log('statusCode = ', statusCode);
+				//debug.log('statusCode = ', statusCode);
 
 				// Support for redirections
 				//if ( (statusCode >= 301) && (statusCode <= 303) ) {

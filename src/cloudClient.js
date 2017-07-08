@@ -2,14 +2,37 @@ import _ from 'lodash';
 import is from 'nor-is';
 import debug from 'nor-debug';
 import Q from 'q';
+import URL from 'url';
 import reserved from 'reserved-words';
 import globals from 'globals';
 import request from './request/index.js';
-const postRequest = request.post;
+
+const _postRequest = request.post;
 const getRequest = request.get;
 
 /** Global cache for classes */
 const _cache = {};
+
+function fixAuthorization (postRequest_, url) {
+	const options = URL.parse(url, true);
+	const auth = options.auth || '';
+	if (!auth) return postRequest_;
+
+	return (realUrl, data) => {
+
+		console.log('realUrl = ', realUrl);
+
+		let opts = URL.parse(realUrl, true);
+		const optsAuth = opts.auth || '';
+		if (optsAuth) return postRequest_(realUrl, data);
+
+		opts.auth = auth;
+
+		const newUrl = URL.format(opts);
+		console.log('newUrl = ', newUrl);
+		return postRequest_(newUrl, data);
+	};
+}
 
 /** */
 function parse_type (type) {
@@ -67,8 +90,9 @@ const parsePayload = result => {
 }
 
 /** */
-export function buildCloudClassSync (body) {
-	debug.log('body = ', body);
+export function buildCloudClassSync (body, postRequest_) {
+	//debug.log('body = ', body);
+	debug.assert(postRequest_).is('function');
 
 	debug.assert(body).is('object');
 
@@ -132,19 +156,21 @@ export function buildCloudClassSync (body) {
 	_.forEach(methods, key => {
 		const baseUrl = body.$ref || url;
 		const methodUrl = (baseUrl && (baseUrl.length >= 1) && (baseUrl[baseUrl.length-1] === '/')) ? baseUrl + key : baseUrl + '/' + key;
-		Class.prototype[key] = (...$args) => postRequest(methodUrl, {$args}).then(parsePayload);
+		Class.prototype[key] = (...$args) => postRequest_(methodUrl, {$args}).then(parsePayload);
 	});
 
 	return Class;
 }
 
-export function buildCloudClass (body) {
-	return Q.when(buildCloudClassSync(body));
+export function buildCloudClass (body, postRequest_) {
+	debug.assert(postRequest_).is('function');
+	return Q.when(buildCloudClassSync(body, postRequest_));
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
-export function getCloudClassFromObject (body) {
+export function getCloudClassFromObject (body, postRequest_) {
 	return Q.fcall( () => {
+		debug.assert(postRequest_).is('function');
 		debug.assert(body).is('object');
 		debug.assert(body.$id).is('uuid');
 
@@ -184,7 +210,7 @@ export function getCloudClassFromObject (body) {
 		cache2 = cache1[id] = {
 			name: type,
 			id,
-			Type: buildCloudClassSync(body),
+			Type: buildCloudClassSync(body, postRequest_),
 			time: now
 		};
 
@@ -196,14 +222,15 @@ export function getCloudClassFromURL (url) {
 	return getRequest(url).then( body => {
 		debug.assert(body).is('object');
 		debug.assert(body.$prototype).is('object');
-		return getCloudClassFromObject(body.$prototype);
+		return getCloudClassFromObject(body.$prototype, fixAuthorization(_postRequest, url));
 	});
 }
 
-export function getCloudInstanceFromObject (body) {
+export function getCloudInstanceFromObject (body, postRequest_) {
+	debug.assert(postRequest_).is('function');
 	debug.assert(body).is('object');
 	debug.assert(body.$prototype).is('object');
-	return getCloudClassFromObject(body.$prototype).then(Class => {
+	return getCloudClassFromObject(body.$prototype, postRequest_).then(Class => {
 		debug.assert(Class).is('function');
 		let instance = new Class(body);
 		debug.assert(instance).is('object');
@@ -212,12 +239,13 @@ export function getCloudInstanceFromObject (body) {
 }
 
 export function getCloudInstanceFromURL (url) {
-	return getRequest(url).then(getCloudInstanceFromObject);
+	const postRequest = fixAuthorization(_postRequest, url);
+	return getRequest(url).then(body => getCloudInstanceFromObject(body, postRequest) );
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
 function cloudClient (arg) {
-	if (is.object(arg)) return getCloudInstanceFromObject(arg);
+	if (is.object(arg)) return getCloudInstanceFromObject(arg, _postRequest);
 	if (is.url(arg)) return getCloudInstanceFromURL(arg);
 	throw new TypeError("Argument passed to cloudClient() is unsupported type: " + typeof arg);
 }
