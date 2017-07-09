@@ -8,7 +8,10 @@ import globals from 'globals';
 import request from './request/index.js';
 
 const _postRequest = request.post;
-const getRequest = request.get;
+const _getRequest = request.get;
+
+const longPollingMinDelay = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_MIN_DELAY || 500, 10); // ms
+const longPollingPreferWait = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_PREFER_WAIT || 20, 10); // s
 
 /** Global cache for classes */
 const _cache = {};
@@ -89,9 +92,14 @@ const parsePayload = result => {
 	return payload;
 }
 
+function _sleep (time) {
+	return Q.Promise(resolve => setTimeout(resolve, time));
+}
+
 /** */
-export function buildCloudClassSync (body, postRequest_) {
+export function buildCloudClassSync (body, getRequest_, postRequest_) {
 	//debug.log('body = ', body);
+	debug.assert(getRequest_).is('function');
 	debug.assert(postRequest_).is('function');
 
 	debug.assert(body).is('object');
@@ -105,6 +113,71 @@ export function buildCloudClassSync (body, postRequest_) {
 		const isMethod = is.object(value) && value.$type === 'Function';
 		(isMethod ? methods : properties).push(key);
 	});
+
+	const __updateData = (self, data) => {
+		//debug.log('__updateData(', self, ', ', data, ')');
+
+		debug.assert(self).is('object');
+		debug.assert(data).is('object');
+
+		debug.assert(self.$ref).is('url');
+		debug.assert(data.$ref).is('url').equals(self.$ref);
+
+		_.forEach(_.keys(data), key => {
+			const value = data[key];
+
+			if ( (key === '$id') || (key === '$hash') ) {
+				self[key] = value;
+				return;
+			}
+
+			const firstLetter = (key.length >= 1) ? key.substr(0, 1) : '';
+			if (firstLetter === '$') return;
+			if (firstLetter === '_') return;
+
+			self[key] = value;
+		});
+	};
+
+	let __lastLongPollTime = _.now();
+
+	const __longPollData = self => {
+		//debug.log('__longPollData(', self, ')');
+
+		const url = self.$ref;
+		const etag = self.$hash;
+
+		if (!(url && etag)) return;
+
+		Q.fcall(() => {
+
+			return Q.fcall( () => {
+				const delay = _.now() - __lastLongPollTime;
+				if (delay < longPollingMinDelay) {
+					return _sleep(longPollingMinDelay - delay);
+				}
+			}).then(
+				() => getRequest_(url, {wait:longPollingPreferWait, etag}).then(body => {
+					__lastLongPollTime = _.now();
+
+					//debug.log('body = ', body);
+
+					const statusCode = body && body._statusCode;
+
+					if (statusCode === 304) return;
+					if (is.object(body)) return __updateData(self, body);
+
+					debug.error('Warning! Could not update service: ', body);
+
+				})
+			);
+
+		}).fail(err => {
+			debug.error('[longPollError] ', err);
+		}).fin(() => {
+			__longPollData(self);
+		}).done();
+	};
 
 	const __setupStaticData = (self, data) => {
 
@@ -126,6 +199,8 @@ export function buildCloudClassSync (body, postRequest_) {
 				self[key] = _.cloneDeep(data[key]);
 			});
 		}
+
+		__longPollData(self);
 	};
 
 	let Class;
@@ -164,14 +239,16 @@ export function buildCloudClassSync (body, postRequest_) {
 	return Class;
 }
 
-export function buildCloudClass (body, postRequest_) {
+export function buildCloudClass (body, getRequest_, postRequest_) {
+	debug.assert(getRequest_).is('function');
 	debug.assert(postRequest_).is('function');
-	return Q.when(buildCloudClassSync(body, postRequest_));
+	return Q.when(buildCloudClassSync(body, getRequest_, postRequest_));
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
-export function getCloudClassFromObject (body, postRequest_) {
+export function getCloudClassFromObject (body, getRequest_, postRequest_) {
 	return Q.fcall( () => {
+		debug.assert(getRequest_).is('function');
 		debug.assert(postRequest_).is('function');
 		debug.assert(body).is('object');
 		debug.assert(body.$id).is('uuid');
@@ -212,7 +289,7 @@ export function getCloudClassFromObject (body, postRequest_) {
 		cache2 = cache1[id] = {
 			name: type,
 			id,
-			Type: buildCloudClassSync(body, postRequest_),
+			Type: buildCloudClassSync(body, getRequest_, postRequest_),
 			time: now
 		};
 
@@ -221,18 +298,19 @@ export function getCloudClassFromObject (body, postRequest_) {
 }
 
 export function getCloudClassFromURL (url) {
-	return getRequest(url).then( body => {
+	return _getRequest(url).then( body => {
 		debug.assert(body).is('object');
 		debug.assert(body.$prototype).is('object');
-		return getCloudClassFromObject(body.$prototype, fixAuthorization(_postRequest, url));
+		return getCloudClassFromObject(body.$prototype, fixAuthorization(_getRequest, url), fixAuthorization(_postRequest, url));
 	});
 }
 
-export function getCloudInstanceFromObject (body, postRequest_) {
+export function getCloudInstanceFromObject (body, getRequest_, postRequest_) {
+	debug.assert(getRequest_).is('function');
 	debug.assert(postRequest_).is('function');
 	debug.assert(body).is('object');
 	debug.assert(body.$prototype).is('object');
-	return getCloudClassFromObject(body.$prototype, postRequest_).then(Class => {
+	return getCloudClassFromObject(body.$prototype, getRequest_, postRequest_).then(Class => {
 		debug.assert(Class).is('function');
 		let instance = new Class(body);
 		debug.assert(instance).is('object');
@@ -241,13 +319,14 @@ export function getCloudInstanceFromObject (body, postRequest_) {
 }
 
 export function getCloudInstanceFromURL (url) {
+	const getRequest = fixAuthorization(_getRequest, url);
 	const postRequest = fixAuthorization(_postRequest, url);
-	return getRequest(url).then(body => getCloudInstanceFromObject(body, postRequest) );
+	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest) );
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
 function cloudClient (arg) {
-	if (is.object(arg)) return getCloudInstanceFromObject(arg, _postRequest);
+	if (is.object(arg)) return getCloudInstanceFromObject(arg, _getRequest, _postRequest);
 	if (is.url(arg)) return getCloudInstanceFromURL(arg);
 	throw new TypeError("Argument passed to cloudClient() is unsupported type: " + typeof arg);
 }

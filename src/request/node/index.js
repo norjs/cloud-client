@@ -23,119 +23,141 @@ function _parseProtocol (protocol) {
 	return protocol;
 }
 
-/** */
-function _request (method, url, body) {
-	return Q.fcall( () => {
-		method = _.toLower(method);
+function __request_errorListener (req, listeners, reject, err) {
+	reject(err);
+	req.removeListener('response', listeners.response);
+	delete listeners.response;
+}
 
-		//debug.log('method = ', method)
-		//debug.log('url = ', url)
+function __request_response_endListener (res, listeners, buffer) {
 
-		const options = _parse_url(url);
-		//debug.log('options = ', options);
-		debug.assert(options).is('object');
+	res.removeListener('data', listeners.data);
+	delete listeners.data;
 
-		options.method = method;
+	let contentType = res.headers['content-type'] || undefined;
+	if ( (!contentType) && buffer[0] === '{') {
+		contentType = 'application/json';
+	}
 
-		let defer = Q.defer();
+	const statusCode = res.statusCode;
 
-		const protocol = _parseProtocol(options.protocol);
+	// Support for redirections
+	//if ( (statusCode >= 301) && (statusCode <= 303) ) {
+	//
+	//	if (redirectLoopCounter < 0) {
+	//		throw new Error('Redirect loop detected');
+	//	}
+	//
+	//	redirectLoopCounter -= 1;
+	//
+	//	return request(res.headers.location, {
+	//		'method': 'GET',
+	//		'headers': {
+	//			'accept': opts.url.headers && opts.url.headers.accept
+	//		}
+	//	});
+	//}
 
-		//debug.log('protocol = ', protocol);
+	if (!((statusCode >= 200) && (statusCode < 400))) {
+		throw new HTTPError(statusCode, ((contentType === 'application/json') ? JSON.parse(buffer) : buffer) );
+	}
 
-		const protocolImplementation = protocolPicker[protocol];
+	buffer = (contentType === 'application/json') ? JSON.parse(buffer) : buffer;
 
-		if (!protocolImplementation) throw new Error("No implementation detected for " + protocol);
+	if (buffer === '') {
+		buffer = {};
+	}
 
-		const req = protocolImplementation.request(options);
+	if (is.object(buffer)) {
+		buffer._statusCode = statusCode;
+	}
 
-		let responseListener;
+	return buffer;
+}
 
-		/** Error event listener */
-		const errorListener = err => {
-			defer.reject(err);
-			req.removeListener('response', responseListener);
-		};
+function __request_responseListener (req, res, listeners, resolve) {
+	let buffer = "";
 
-		/** Response event listener */
-		responseListener = res => {
-			//debug.log('got response!');
+	listeners.data = chunk => buffer += chunk;
+	listeners.end = () => resolve( Q.fcall( () => __request_response_endListener(res, listeners, buffer) ));
 
-			//let redirectLoopCounter = 10;
+	res.setEncoding('utf8');
+	res.on('data', listeners.data);
+	res.once('end', listeners.end);
 
-			let buffer = "";
+	req.removeListener('error', listeners.error);
+	delete listeners.error;
+}
 
-			const dataListener = chunk => buffer += chunk;
+function __request (resolve, reject, method, url, body, opts={}) {
+	method = _.toLower(method);
 
-			const endListener = () => defer.resolve( Q.fcall(() =>{
+	//debug.log('method = ', method)
+	//debug.log('url = ', url)
 
-				res.removeListener('data', dataListener);
+	const options = _parse_url(url);
+	//debug.log('options = ', options);
+	debug.assert(options).is('object');
 
-				let contentType = res.headers['content-type'] || undefined;
+	options.method = method;
 
-				//debug.log('contentType = ', contentType);
+	const protocol = _parseProtocol(options.protocol);
 
-				const statusCode = res.statusCode;
-				//debug.log('statusCode = ', statusCode);
+	//debug.log('protocol = ', protocol);
 
-				// Support for redirections
-				//if ( (statusCode >= 301) && (statusCode <= 303) ) {
-				//
-				//	if (redirectLoopCounter < 0) {
-				//		throw new Error('Redirect loop detected');
-				//	}
-				//
-				//	redirectLoopCounter -= 1;
-				//
-				//	return request(res.headers.location, {
-				//		'method': 'GET',
-				//		'headers': {
-				//			'accept': opts.url.headers && opts.url.headers.accept
-				//		}
-				//	});
-				//}
+	const protocolImplementation = protocolPicker[protocol];
 
-				if ( (!contentType) && buffer[0] === '{') {
-					contentType = 'application/json';
-				}
+	if (!protocolImplementation) throw new Error("No implementation detected for " + protocol);
 
-				if (!((statusCode >= 200) && (statusCode < 400))) {
-					throw new HTTPError(statusCode, ((contentType === 'application/json') ? JSON.parse(buffer) : buffer) );
-				}
-
-				return (contentType === 'application/json') ? JSON.parse(buffer) : buffer;
-			}));
-
-			res.setEncoding('utf8');
-			res.on('data', dataListener);
-			res.once('end', endListener);
-			req.removeListener('error', errorListener);
-
-		};
-
-		// Register listeners
-		req.once('error', errorListener);
-		req.once('response', responseListener);
-
-		if (body && (method !== 'get')) {
-			const buffer = is.string(body) ? body : JSON.stringify(body);
-			req.end( buffer, 'utf8' );
-		} else {
-			req.end();
+	if (opts.etag) {
+		if (!options.headers) {
+			options.headers = {};
 		}
+		options.headers['if-none-match'] = opts.etag;
+	}
 
-		return defer.promise;
-	});
+	if (opts.wait) {
+		if (!options.headers) {
+			options.headers = {};
+		}
+		options.headers.prefer = 'wait=' + opts.wait;
+	}
+
+	const req = protocolImplementation.request(options);
+
+	let listeners = {};
+
+	/** Error event listener */
+	listeners.error = err => __request_errorListener(req, listeners, reject, err);
+
+	/** Response event listener */
+	listeners.response = res => __request_responseListener(req, res, listeners, resolve);
+
+	// Register listeners
+	req.once('error', listeners.error);
+	req.once('response', listeners.response);
+
+	if (body && (method !== 'get')) {
+		const buffer = is.string(body) ? body : JSON.stringify(body);
+		req.end( buffer, 'utf8' );
+	} else {
+		req.end();
+	}
+}
+
+/** */
+function _request (method, url, body, opts) {
+	return Q.Promise( (resolve, reject) => __request(resolve, reject, method, url, body, opts));
 }
 
 /** GET request */
-function getRequest (url) {
-	return _request("get", url);
+function getRequest (url, opts={}) {
+	return _request("get", url, null, opts);
 }
 
 /** POST request */
-function postRequest (url, data) {
-	return _request("post", url, data);
+function postRequest (url, data, opts={}) {
+	return _request("post", url, data, opts);
 }
 
 // Exports
