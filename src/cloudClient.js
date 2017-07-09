@@ -20,7 +20,7 @@ function fixAuthorization (postRequest_, url) {
 
 	return (realUrl, data) => {
 
-		console.log('realUrl = ', realUrl);
+		//console.log('realUrl = ', realUrl);
 
 		let opts = URL.parse(realUrl, true);
 		const optsAuth = opts.auth || '';
@@ -29,7 +29,7 @@ function fixAuthorization (postRequest_, url) {
 		opts.auth = auth;
 
 		const newUrl = URL.format(opts);
-		console.log('newUrl = ', newUrl);
+		//console.log('newUrl = ', newUrl);
 		return postRequest_(newUrl, data);
 	};
 }
@@ -106,7 +106,7 @@ export function buildCloudClassSync (body, postRequest_) {
 		(isMethod ? methods : properties).push(key);
 	});
 
-	const setupStaticData = (self, data) => {
+	const __setupStaticData = (self, data) => {
 
 		// Copy properties from prototype
 		_.forEach(properties, key => {
@@ -130,24 +130,26 @@ export function buildCloudClassSync (body, postRequest_) {
 
 	let Class;
 	const types = parse_type(body.$type);
+	//const constructorArgs = is.array(body.$args) ? body.$args : [];
+	//const constructorArgsStr = constructorArgs.join(', ');
 	if (types.length === 0) {
-		Class = class {constructor(data) { setupStaticData(this, data); }};
+		Class = class {constructor(data) { __setupStaticData(this, data); }};
 	} else if (types.length === 1) {
 		const className = _.first(types);
 		assertValidClassName(className);
-		Class = (new Function("setup", "return class "+className+" { constructor(data) { setup(this, data); } }"))(setupStaticData);
+		Class = (new Function("__setupStaticData", "return class "+className+" { constructor(data) { __setupStaticData(this, data); } }"))(__setupStaticData);
 	} else {
 		const firstClassName = _.first(types);
 		Class = _.reduceRight(types, (Base, className) => {
 			assertValidClassName(className);
 			if (Base === undefined) {
-				return (new Function("setup", "return class "+className+" {}"))();
+				return (new Function("return class "+className+" {}"))();
 			}
 			debug.assert(Base).is('function');
 			if (firstClassName === className) {
-				return (new Function("Base", "setup", "return class "+className+" extends Base { constructor(data) { super(); setup(this, data); } }"))(Base, setupStaticData);
+				return (new Function("__setupStaticData", "__Base", "return class "+className+" extends __Base { constructor(data) { super(); __setupStaticData(this, data); } }"))(__setupStaticData, Base);
 			} else {
-				return (new Function("Base", "return class "+className+" extends Base { constructor() { super(); } }"))(Base);
+				return (new Function("__Base", "return class "+className+" extends __Base { constructor() { super(); } }"))(Base);
 			}
 		}, undefined);
 	}
