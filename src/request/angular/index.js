@@ -1,20 +1,66 @@
 
+import angular from 'angular';
+import debug from 'nor-debug';
 import Q from 'q';
 
+/** Angular to Q wrapper */
+function qWrap (f) {
+	debug.assert(f).is('function');
+	return Q.Promise( (resolve, reject) => {
+		const initInjector = angular.injector(['ng']);
+		const $http = initInjector.get('$http');
+		const $q = initInjector.get('$q');
+
+		$q.when(f($http)).then( payload => {
+			console.log('GET payload =', payload);
+			return resolve(payload.data);
+		}).catch(reject);
+
+	});
+
+}
+
+/** Get HTTP headers from options */
+function getHeaders (opts) {
+	let headers;
+
+	if (opts.etag) {
+		if (!headers) {
+			headers = {};
+		}
+		headers['if-none-match'] = opts.etag;
+	}
+
+	if (opts.wait) {
+		if (!headers) {
+			headers = {};
+		}
+		headers.prefer = 'wait=' + opts.wait;
+	}
+
+	return headers;
+}
+
 /** GET request */
-function getRequest ($http, url) {
-	return Q.when($http.get(url));
+function getRequest (url, opts={}) {
+	return qWrap( $http => {
+		const headers = getHeaders(opts);
+		return $http.get(url, {headers});
+	});
 }
 
 /** POST request */
-function postRequest ($http, url, data) {
-	return Q.when($http.post(url, data));
+function postRequest (url, data, opts={}) {
+	return qWrap( $http => {
+		const headers = getHeaders(opts);
+		return $http.post(url, JSON.stringify(data), {headers});
+	});
 }
 
 // Exports
-const request = $http => ({
-	get: (...args) => getRequest($http, ...args),
-	post: (...args) => postRequest($http, ...args),
-});
+const request = {
+	get: getRequest,
+	post: postRequest
+};
 
 export default request;

@@ -160,11 +160,18 @@ export function buildCloudClassSync (body, getRequest_, postRequest_) {
 
 					const statusCode = body && body._statusCode;
 
+					// Node implementation doesn't throw an exception when 304 happens
 					if (statusCode === 304) return;
 					if (is.object(body)) return __updateData(self, body);
 
 					debug.error('Warning! Could not update service: ', body);
 
+				}).fail(err => {
+
+					// Angular throws exceptions in 304
+					if (err && err.status === 304) return;
+
+					return Q.reject(err);
 				})
 			);
 
@@ -295,8 +302,11 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_) {
 
 export function getCloudClassFromURL (url, request) {
 	request = request || require('./request/index.js');
+	debug.assert(request).is('object');
 	const postRequest = request.post;
 	const getRequest = request.get;
+	debug.assert(postRequest).is('function');
+	debug.assert(getRequest).is('function');
 
 	return getRequest(url).then( body => {
 		debug.assert(body).is('object');
@@ -320,21 +330,33 @@ export function getCloudInstanceFromObject (body, getRequest_, postRequest_) {
 
 export function getCloudInstanceFromURL (url, request) {
 
+	console.log('request =', request);
+	debug.assert(request).ignore(undefined).is('object');
 	request = request || require('./request/index.js');
-	const postRequest_ = request.post;
-	const getRequest_ = request.get;
+	console.log('request =', request);
+	debug.assert(request).is('object');
+	let postRequest = request.post;
+	let getRequest = request.get;
+	debug.assert(postRequest).is('function');
+	debug.assert(getRequest).is('function');
 
-	const getRequest = fixAuthorization(getRequest_, url);
-	const postRequest = fixAuthorization(postRequest_, url);
+	getRequest = fixAuthorization(getRequest, url);
+	postRequest = fixAuthorization(postRequest, url);
 	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest) );
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
 function cloudClient (arg, request) {
 
+	debug.assert(request).ignore(undefined).is('object');
+	console.log('request = ', request);
 	request = request || require('./request/index.js');
+	console.log('request = ', request);
+	debug.assert(request).is('object');
 	const postRequest = request.post;
 	const getRequest = request.get;
+	debug.assert(postRequest).is('function');
+	debug.assert(getRequest).is('function');
 
 	if (is.object(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest);
 	if (is.url(arg)) return getCloudInstanceFromURL(arg, request);

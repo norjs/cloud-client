@@ -7,7 +7,12 @@ const isAngular = isBrowser && new Function("try {return window.angular !== unde
 if (isNode) {
 	module.exports = require('./node/index.js');
 } else if (isAngular) {
-	module.exports = require('./angular/warnings.js');
+	module.exports = require('./angular/index.js');
 } else {
 	module.exports = require('./unknown/index.js');
+}
+
+// Support for ES6 export default style
+if (module.exports.default) {
+	module.exports = module.exports.default;
 }
