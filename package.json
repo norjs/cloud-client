@@ -4,6 +4,7 @@
   "description": "Client for Sendanor's cloud framework",
   "main": "dist/index.js",
   "scripts": {
+    "compile-watch": "babel --watch --presets es2015 -d dist/ src/",
     "compile": "babel --presets es2015 -d dist/ src/",
     "prepublish": "npm run compile",
     "test": "echo \"Error: no test specified\" && exit 1"

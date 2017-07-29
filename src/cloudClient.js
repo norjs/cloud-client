@@ -5,10 +5,6 @@ import Q from 'q';
 import URL from 'url';
 import reserved from 'reserved-words';
 import globals from 'globals';
-import request from './request/index.js';
-
-const _postRequest = request.post;
-const _getRequest = request.get;
 
 const longPollingMinDelay = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_MIN_DELAY || 500, 10); // ms
 const longPollingPreferWait = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_PREFER_WAIT || 20, 10); // s
@@ -297,11 +293,15 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_) {
 	});
 }
 
-export function getCloudClassFromURL (url) {
-	return _getRequest(url).then( body => {
+export function getCloudClassFromURL (url, request) {
+	request = request || require('./request/index.js');
+	const postRequest = request.post;
+	const getRequest = request.get;
+
+	return getRequest(url).then( body => {
 		debug.assert(body).is('object');
 		debug.assert(body.$prototype).is('object');
-		return getCloudClassFromObject(body.$prototype, fixAuthorization(_getRequest, url), fixAuthorization(_postRequest, url));
+		return getCloudClassFromObject(body.$prototype, fixAuthorization(getRequest, url), fixAuthorization(postRequest, url));
 	});
 }
 
@@ -318,16 +318,26 @@ export function getCloudInstanceFromObject (body, getRequest_, postRequest_) {
 	});
 }
 
-export function getCloudInstanceFromURL (url) {
-	const getRequest = fixAuthorization(_getRequest, url);
-	const postRequest = fixAuthorization(_postRequest, url);
+export function getCloudInstanceFromURL (url, request) {
+
+	request = request || require('./request/index.js');
+	const postRequest_ = request.post;
+	const getRequest_ = request.get;
+
+	const getRequest = fixAuthorization(getRequest_, url);
+	const postRequest = fixAuthorization(postRequest_, url);
 	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest) );
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
-function cloudClient (arg) {
-	if (is.object(arg)) return getCloudInstanceFromObject(arg, _getRequest, _postRequest);
-	if (is.url(arg)) return getCloudInstanceFromURL(arg);
+function cloudClient (arg, request) {
+
+	request = request || require('./request/index.js');
+	const postRequest = request.post;
+	const getRequest = request.get;
+
+	if (is.object(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest);
+	if (is.url(arg)) return getCloudInstanceFromURL(arg, request);
 	throw new TypeError("Argument passed to cloudClient() is unsupported type: " + typeof arg);
 }
 
