@@ -93,12 +93,14 @@ function _sleep (time) {
 }
 
 /** */
-export function buildCloudClassSync (body, getRequest_, postRequest_) {
+export function buildCloudClassSync (body, getRequest_, postRequest_, opts) {
 	//debug.log('body = ', body);
 	debug.assert(getRequest_).is('function');
 	debug.assert(postRequest_).is('function');
 
 	debug.assert(body).is('object');
+
+	const enableLongPolling = !!(opts && opts.enableLongPolling);
 
 	let methods = [];
 	let properties = [];
@@ -203,7 +205,7 @@ export function buildCloudClassSync (body, getRequest_, postRequest_) {
 			});
 		}
 
-		__longPollData(self);
+		if (enableLongPolling) __longPollData(self);
 	};
 
 	let Class;
@@ -242,14 +244,14 @@ export function buildCloudClassSync (body, getRequest_, postRequest_) {
 	return Class;
 }
 
-export function buildCloudClass (body, getRequest_, postRequest_) {
+export function buildCloudClass (body, getRequest_, postRequest_, opts) {
 	debug.assert(getRequest_).is('function');
 	debug.assert(postRequest_).is('function');
-	return Q.when(buildCloudClassSync(body, getRequest_, postRequest_));
+	return Q.when(buildCloudClassSync(body, getRequest_, postRequest_, opts));
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
-export function getCloudClassFromObject (body, getRequest_, postRequest_) {
+export function getCloudClassFromObject (body, getRequest_, postRequest_, opts) {
 	return Q.fcall( () => {
 		debug.assert(getRequest_).is('function');
 		debug.assert(postRequest_).is('function');
@@ -292,7 +294,7 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_) {
 		cache2 = cache1[id] = {
 			name: type,
 			id,
-			Type: buildCloudClassSync(body, getRequest_, postRequest_),
+			Type: buildCloudClassSync(body, getRequest_, postRequest_, opts),
 			time: now
 		};
 
@@ -300,7 +302,7 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_) {
 	});
 }
 
-export function getCloudClassFromURL (url, request) {
+export function getCloudClassFromURL (url, request, opts) {
 	request = request || require('./request/index.js');
 	debug.assert(request).is('object');
 	const postRequest = request.post;
@@ -311,16 +313,16 @@ export function getCloudClassFromURL (url, request) {
 	return getRequest(url).then( body => {
 		debug.assert(body).is('object');
 		debug.assert(body.$prototype).is('object');
-		return getCloudClassFromObject(body.$prototype, fixAuthorization(getRequest, url), fixAuthorization(postRequest, url));
+		return getCloudClassFromObject(body.$prototype, fixAuthorization(getRequest, url), fixAuthorization(postRequest, url), opts);
 	});
 }
 
-export function getCloudInstanceFromObject (body, getRequest_, postRequest_) {
+export function getCloudInstanceFromObject (body, getRequest_, postRequest_, opts) {
 	debug.assert(getRequest_).is('function');
 	debug.assert(postRequest_).is('function');
 	debug.assert(body).is('object');
 	debug.assert(body.$prototype).is('object');
-	return getCloudClassFromObject(body.$prototype, getRequest_, postRequest_).then(Class => {
+	return getCloudClassFromObject(body.$prototype, getRequest_, postRequest_, opts).then(Class => {
 		debug.assert(Class).is('function');
 		let instance = new Class(body);
 		debug.assert(instance).is('object');
@@ -328,12 +330,12 @@ export function getCloudInstanceFromObject (body, getRequest_, postRequest_) {
 	});
 }
 
-export function getCloudInstanceFromURL (url, request) {
+export function getCloudInstanceFromURL (url, request, opts) {
 
-	console.log('request =', request);
+	//console.log('request =', request);
 	debug.assert(request).ignore(undefined).is('object');
 	request = request || require('./request/index.js');
-	console.log('request =', request);
+	//console.log('request =', request);
 	debug.assert(request).is('object');
 	let postRequest = request.post;
 	let getRequest = request.get;
@@ -342,24 +344,26 @@ export function getCloudInstanceFromURL (url, request) {
 
 	getRequest = fixAuthorization(getRequest, url);
 	postRequest = fixAuthorization(postRequest, url);
-	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest) );
+	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest, opts) );
 }
 
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
-function cloudClient (arg, request) {
+function cloudClient (arg, request, opts) {
 
 	debug.assert(request).ignore(undefined).is('object');
-	console.log('request = ', request);
+	debug.assert(opts).ignore(undefined).is('object');
+
+	//console.log('request = ', request);
 	request = request || require('./request/index.js');
-	console.log('request = ', request);
+	//console.log('request = ', request);
 	debug.assert(request).is('object');
 	const postRequest = request.post;
 	const getRequest = request.get;
 	debug.assert(postRequest).is('function');
 	debug.assert(getRequest).is('function');
 
-	if (is.object(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest);
-	if (is.url(arg)) return getCloudInstanceFromURL(arg, request);
+	if (is.object(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest, opts);
+	if (is.url(arg)) return getCloudInstanceFromURL(arg, request, opts);
 	throw new TypeError("Argument passed to cloudClient() is unsupported type: " + typeof arg);
 }
 
