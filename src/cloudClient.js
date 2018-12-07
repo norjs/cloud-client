@@ -1,5 +1,4 @@
 import _ from 'lodash';
-import is from 'nor-is';
 import debug from 'nor-debug';
 import Q from 'q';
 import URL from 'url';
@@ -162,8 +161,8 @@ function fixAuthorization (postRequest_, url) {
 
 /** */
 function parse_type (type) {
-	if (is.array(type)) return type;
-	if (is.string(type)) return [type];
+	if (_.isArray(type)) return type;
+	if (_.isString(type)) return [type];
 	return [];
 }
 
@@ -178,7 +177,7 @@ function isReservedWord (name) {
 
 /** */
 function isValidName (name) {
-	return is.string(name) && is.pattern(name, /^[a-zA-Z$_][a-zA-Z0-9$_]*$/);
+	return _.isString(name) && /^[a-zA-Z$_][a-zA-Z0-9$_]*$/.test(name);
 }
 
 function assertValidName (name) {
@@ -192,7 +191,7 @@ function assertValidName (name) {
 
 /** */
 function isValidClassName (name) {
-	return is.string(name) && is.pattern(name, /^[a-zA-Z][a-zA-Z0-9$_]*$/);
+	return _.isString(name) && /^[a-zA-Z][a-zA-Z0-9$_]*$/.test(name);
 }
 
 function assertValidClassName (className) {
@@ -236,7 +235,7 @@ export function buildCloudClassSync (body, getRequest_, postRequest_, opts) {
 	Object.keys(body).forEach(key => {
 		assertValidName(key);
 		const value = body[key];
-		const isMethod = is.object(value) && value.$type === 'Function';
+		const isMethod = _.isObject(value) && value.$type === 'Function';
 		(isMethod ? methods : properties).push(key);
 	});
 
@@ -292,7 +291,7 @@ export function buildCloudClassSync (body, getRequest_, postRequest_, opts) {
 
 					// Node implementation doesn't throw an exception when 304 happens
 					if (statusCode === 304) return;
-					if (is.object(body)) return __updateData(self, body);
+					if (_.isObject(body)) return __updateData(self, body);
 
 					debug.error('Warning! Could not update service: ', body);
 
@@ -323,7 +322,7 @@ export function buildCloudClassSync (body, getRequest_, postRequest_, opts) {
 		});
 
 		// Copy properties from provided instance (arguments to constructor)
-		if (is.object(data)) {
+		if (_.isObject(data)) {
 			_.forEach(Object.keys(data), key => {
 				const firstLetter = key && key.length >= 1 ? key[0] : '';
 				//if (firstLetter === '$') return;
@@ -338,7 +337,7 @@ export function buildCloudClassSync (body, getRequest_, postRequest_, opts) {
 
 	let Class;
 	const types = parse_type(body.$type);
-	//const constructorArgs = is.array(body.$args) ? body.$args : [];
+	//const constructorArgs = _.isArray(body.$args) ? body.$args : [];
 	//const constructorArgsStr = constructorArgs.join(', ');
 	if (types.length === 0) {
 		Class = class {constructor(data) { __setupStaticData(this, data); }};
@@ -387,7 +386,7 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_, opts) 
 		debug.assert(body.$id).is('uuid');
 
 		let type;
-		if (!is.array(body.$type)) {
+		if (!_.isArray(body.$type)) {
 			type = body.$type;
 		} else {
 			type = _.first(body.$type);
@@ -398,14 +397,14 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_, opts) 
 		debug.assert(type).is('string');
 
 		let cache1 = _cache[type];
-		if (!is.object(cache1)) {
+		if (!_.isObject(cache1)) {
 			cache1 = _cache[type] = {};
 		}
 
 		const now = (new Date().getTime());
 
 		let cache2 = cache1[id];
-		if (is.object(cache2)) {
+		if (_.isObject(cache2)) {
 			cache2.time = now;
 			return cache2.Type;
 		}
@@ -475,6 +474,16 @@ export function getCloudInstanceFromURL (url, request, opts) {
 	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest, opts) );
 }
 
+/**
+ * Check if value is a string and an URL.
+ *
+ * @param value {string}
+ * @returns {boolean}
+ */
+function isUrl (value) {
+	return _.isString(value) && /^(ftp|https?):\/\//.test(value);
+}
+
 /** Get a JS class for this cloud object. It is either found from cache or generated. */
 function cloudClient (arg, request, opts) {
 
@@ -490,8 +499,8 @@ function cloudClient (arg, request, opts) {
 	debug.assert(postRequest).is('function');
 	debug.assert(getRequest).is('function');
 
-	if (is.object(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest, opts);
-	if (is.url(arg)) return getCloudInstanceFromURL(arg, request, opts);
+	if (_.isObject(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest, opts);
+	if (isUrl(arg)) return getCloudInstanceFromURL(arg, request, opts);
 	throw new TypeError("Argument passed to cloudClient() is unsupported type: " + typeof arg);
 }
 

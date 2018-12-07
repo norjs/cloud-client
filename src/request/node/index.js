@@ -1,11 +1,10 @@
 /** HTTP/HTTPS requests */
 
 import _ from 'lodash';
-import is from 'nor-is';
 import debug from 'nor-debug';
 import Q from 'q';
-import { HTTPError } from 'nor-errors';
 import URL from 'url';
+import HTTPError from '../../HTTPError';
 import LazyProtocolPicker from './LazyProtocolPicker.js';
 
 const protocolPicker = new LazyProtocolPicker();
@@ -68,7 +67,7 @@ function __request_response_endListener (res, listeners, buffer) {
 		buffer = {};
 	}
 
-	if (is.object(buffer)) {
+	if (_.isObject(buffer)) {
 		buffer._statusCode = statusCode;
 	}
 
@@ -138,7 +137,7 @@ function __request (resolve, reject, method, url, body, opts={}) {
 	req.once('response', listeners.response);
 
 	if (body && (method !== 'get')) {
-		const buffer = is.string(body) ? body : JSON.stringify(body);
+		const buffer = _.isString(body) ? body : JSON.stringify(body);
 		req.end( buffer, 'utf8' );
 	} else {
 		req.end();
