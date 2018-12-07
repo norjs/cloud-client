@@ -1,12 +1,13 @@
-Client for Sendanor's cloud framework
-=====================================
+Client for NorJS's cloud framework
+==================================
 
-This module creates client interfaces into services provided by [`@sendanor/cloud-backend`](https://www.npmjs.com/package/@sendanor/cloud-backend).
+This module creates client interfaces into services provided by 
+[`@norjs/cloud-backend`](https://www.npmjs.com/package/@norjs/cloud-backend).
 
-Install: `npm i --save '@sendanor/cloud-client'`
+Install: `npm i --save '@norjs/cloud-client'`
 
 ```javascript
-import cloudClient from '@sendanor/cloud-client';
+import cloudClient from '@norjs/cloud-client';
 
 cloudClient('http://localhost:3000').then(instance => {
 	return instance.getDate().then(date => {
