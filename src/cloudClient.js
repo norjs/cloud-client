@@ -3,8 +3,135 @@ import is from 'nor-is';
 import debug from 'nor-debug';
 import Q from 'q';
 import URL from 'url';
-import reserved from 'reserved-words';
-import globals from 'globals';
+
+/**
+ * ES6 reserved words.
+ *
+ * @type {{isPrototypeOf: boolean, ReferenceError: boolean, Uint16Array: boolean, URIError: boolean, String: boolean, Math: boolean, protected: boolean, else:
+ *     boolean, let: boolean, Uint8Array: boolean, catch: boolean, Boolean: boolean, if: boolean, case: boolean, in: boolean, var: boolean, decodeURI: boolean,
+ *     enum: boolean, Promise: boolean, TypeError: boolean, Object: boolean, Map: boolean, parseFloat: boolean, Set: boolean, propertyIsEnumerable: boolean,
+ *     isFinite: boolean, undefined: boolean, default: boolean, yield: boolean, escape: boolean, typeof: boolean, Int8Array: boolean, Infinity: boolean, break:
+ *     boolean, EvalError: boolean, throw: boolean, Reflect: boolean, ArrayBuffer: boolean, toString: boolean, return: boolean, WeakMap: boolean, debugger:
+ *     boolean, WeakSet: boolean, do: boolean, while: boolean, Float64Array: boolean, isNaN: boolean, encodeURI: boolean, SyntaxError: boolean, continue:
+ *     boolean, function: boolean, export: boolean, Uint8ClampedArray: boolean, new: boolean, package: boolean, static: boolean, void: boolean, RegExp:
+ *     boolean, finally: boolean, this: boolean, Float32Array: boolean, constructor: boolean, eval: boolean, extends: boolean, null: boolean, true: boolean,
+ *     try: boolean, encodeURIComponent: boolean, toLocaleString: boolean, implements: boolean, private: boolean, const: boolean, import: boolean, Symbol:
+ *     boolean, for: boolean, JSON: boolean, interface: boolean, delete: boolean, System: boolean, switch: boolean, Function: boolean, Int32Array: boolean,
+ *     Proxy: boolean, hasOwnProperty: boolean, public: boolean, Number: boolean, await: boolean, RangeError: boolean, NaN: boolean, class: boolean,
+ *     Int16Array: boolean, valueOf: boolean, false: boolean, Error: boolean, unescape: boolean, Date: boolean, instanceof: boolean, decodeURIComponent:
+ *     boolean, super: boolean, Array: boolean, parseInt: boolean, with: boolean, DataView: boolean, Uint32Array: boolean}}
+ */
+const RESERVED = {
+
+	// ES6 preserved words
+	"await": true,
+	"break": true,
+	"case": true,
+	"catch": true,
+	"class": true,
+	"const": true,
+	"continue": true,
+	"debugger": true,
+	"default": true,
+	"delete": true,
+	"do": true,
+	"else": true,
+	"enum": true,
+	"export": true,
+	"extends": true,
+	"false": true,
+	"finally": true,
+	"for": true,
+	"function": true,
+	"if": true,
+	"implements": true,
+	"import": true,
+	"in": true,
+	"instanceof": true,
+	"interface": true,
+	"let": true,
+	"new": true,
+	"null": true,
+	"package": true,
+	"private": true,
+	"protected": true,
+	"public": true,
+	"return": true,
+	"static": true,
+	"super": true,
+	"switch": true,
+	"this": true,
+	"throw": true,
+	"true": true,
+	"try": true,
+	"typeof": true,
+	"var": true,
+	"void": true,
+	"while": true,
+	"with": true,
+	"yield": true,
+
+	// ES6 preserved global names
+	"Array": true,
+	"ArrayBuffer": true,
+	"Boolean": true,
+	"DataView": true,
+	"Date": true,
+	"Error": true,
+	"EvalError": true,
+	"Float32Array": true,
+	"Float64Array": true,
+	"Function": true,
+	"Infinity": true,
+	"Int16Array": true,
+	"Int32Array": true,
+	"Int8Array": true,
+	"JSON": true,
+	"Map": true,
+	"Math": true,
+	"NaN": true,
+	"Number": true,
+	"Object": true,
+	"Promise": true,
+	"Proxy": true,
+	"RangeError": true,
+	"ReferenceError": true,
+	"Reflect": true,
+	"RegExp": true,
+	"Set": true,
+	"String": true,
+	"Symbol": true,
+	"SyntaxError": true,
+	"System": true,
+	"TypeError": true,
+	"URIError": true,
+	"Uint16Array": true,
+	"Uint32Array": true,
+	"Uint8Array": true,
+	"Uint8ClampedArray": true,
+	"WeakMap": true,
+	"WeakSet": true,
+	"constructor": true,
+	"decodeURI": true,
+	"decodeURIComponent": true,
+	"encodeURI": true,
+	"encodeURIComponent": true,
+	"escape": true,
+	"eval": true,
+	"hasOwnProperty": true,
+	"isFinite": true,
+	"isNaN": true,
+	"isPrototypeOf": true,
+	"parseFloat": true,
+	"parseInt": true,
+	"propertyIsEnumerable": true,
+	"toLocaleString": true,
+	"toString": true,
+	"undefined": true,
+	"unescape": true,
+	"valueOf": true
+
+};
 
 const longPollingMinDelay = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_MIN_DELAY || 500, 10); // ms
 const longPollingPreferWait = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_PREFER_WAIT || 20, 10); // s
@@ -40,12 +167,13 @@ function parse_type (type) {
 	return [];
 }
 
-/** Check if reserved word in ES6 */
+/** Check if `name` is a reserved word in ES6.
+ *
+ * @param name {string}
+ * @return {boolean}
+ */
 function isReservedWord (name) {
-	if (reserved.check(name, 6)) {
-		return true;
-	}
-	return globals.es6[name] !== undefined;
+	return !!_.has(RESERVED, name);
 }
 
 /** */
