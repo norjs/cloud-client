@@ -1,6 +1,6 @@
 {
   "name": "@norjs/cloud-client",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "description": "Client for NorJS's cloud framework",
   "main": "dist/index.js",
   "scripts": {
@@ -10,7 +10,6 @@
     "pretest": "npm run -s compile",
     "test": "mocha --require babel-register test/unit/**/*.spec.js",
     "preversion": "npm test",
-    "version": "git add -A dist",
     "postversion": "git push && git push --tags"
   },
   "repository": {
