@@ -1,9 +1,9 @@
 
-import Q from 'q';
+import { Async } from '../../Async.js';
 
 /** GET request */
 function getRequest ($http, url) {
-	return Q.Promise(
+	return Async.Promise(
 		(resolve, reject) => $http.get(url).then( payload => {
 			"use strict";
 			console.log('GET payload =', payload);
@@ -14,7 +14,7 @@ function getRequest ($http, url) {
 
 /** POST request */
 function postRequest ($http, url, data) {
-	return Q.Promise(
+	return Async.Promise(
 		(resolve, reject) => $http.post(url, JSON.stringify(data)).then( payload => {
 			"use strict";
 			console.log('POST payload =', payload);

@@ -1,23 +1,19 @@
-
 import angular from 'angular';
 import debug from 'nor-debug';
-import Q from 'q';
+import { Async } from '../../Async.js';
 
-/** Angular to Q wrapper */
+/** Angular to our promise wrapper */
 function qWrap (f) {
 	debug.assert(f).is('function');
-	return Q.Promise( (resolve, reject) => {
+	return Async.Promise( (resolve, reject) => {
 		const initInjector = angular.injector(['ng']);
 		const $http = initInjector.get('$http');
 		const $q = initInjector.get('$q');
-
 		$q.when(f($http)).then( payload => {
 			console.log('GET payload =', payload);
 			return resolve(payload.data);
 		}).catch(reject);
-
 	});
-
 }
 
 /** Get HTTP headers from options */
