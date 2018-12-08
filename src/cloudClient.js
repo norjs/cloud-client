@@ -187,12 +187,12 @@ export function createRequestFunctionWithAuthorization (origCall, origUrl) {
  *
  * If it's not an array or string, an empty array is returned.
  *
- * @param type {Array.<string>|string}
+ * @param value {Array.<string>|string}
  * @returns {Array.<string>}
  */
-export function parseTypeToArray (type) {
-	if (_.isArray(type)) return type;
-	if (_.isString(type)) return [type];
+export function parseTypeToArray (value) {
+	if (_.isArray(value)) return value;
+	if (_.isString(value)) return [value];
 	return [];
 }
 
