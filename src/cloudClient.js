@@ -399,6 +399,7 @@ export function longPollData (self, context) {
  * @param context {object}
  * @param self {object} Target object where properties are copied to
  * @param data {object} Source object where properties are copied from
+ * @return {function(): boolean} Destruction function which will stop long polling, or a no-op function if long polling was not enabled.
  * @private
  */
 export function setupStaticData (context, self, data) {
@@ -406,8 +407,7 @@ export function setupStaticData (context, self, data) {
 	// Copy properties from prototype
 	_.forEach(context.properties, key => {
 		const firstLetter = key && key.length >= 1 ? key[0] : '';
-		if (firstLetter === '$') return;
-		if (firstLetter === '_') return;
+		if (firstLetter === '$' || firstLetter === '_') return;
 		self[key] = _.cloneDeep(context.body[key])
 	});
 
@@ -415,16 +415,16 @@ export function setupStaticData (context, self, data) {
 	if (_.isObject(data)) {
 		_.forEach(Object.keys(data), key => {
 			const firstLetter = key && key.length >= 1 ? key[0] : '';
-			if (firstLetter === '_') return;
-			if (key === '$prototype') return;
+			if (firstLetter === '_' || key === '$prototype') return;
 			self[key] = _.cloneDeep(data[key]);
 		});
 	}
 
 	if (context.enableLongPolling) {
-		longPollData(self, context.getRequest);
+		return longPollData(self, context.getRequest);
 	}
 
+	return () => {};
 }
 
 /**
@@ -453,9 +453,10 @@ export function parseMethodsAndProperties (body) {
  * Create a class function from context data.
  *
  * @param context {object}
- * @returns {function}
+ * @returns {*}
+ * @param setup {function(context, self, data): function}
  */
-export function classFactory (context) {
+export function classFactory (context, {setup = setupStaticData} = {}) {
 	let firstClassName;
 	const types = parseTypeToArray(context.body.$type);
 	switch(types.length) {
@@ -463,14 +464,14 @@ export function classFactory (context) {
 	case 0:
 		return class {
 			constructor(data) {
-				setupStaticData(context, this, data);
+				setup(context, this, data);
 			}
 		};
 
 	case 1:
 		firstClassName = _.first(types);
 		assertValidClassName(firstClassName);
-		return (new Function("__setupStaticData", "return class "+firstClassName+" { constructor(data) { __setupStaticData(this, data); } }"))(setupStaticData.bind(undefined, context));
+		return (new Function("__setup", "return class "+firstClassName+" { constructor(data) { __setup(this, data); } }"))(setup.bind(undefined, context));
 
 	default:
 		firstClassName = _.first(types);
@@ -481,7 +482,7 @@ export function classFactory (context) {
 			}
 			debug.assert(Base).is('function');
 			if (firstClassName === className) {
-				return (new Function("__setupStaticData", "__Base", "return class "+className+" extends __Base { constructor(data) { super(); __setupStaticData(this, data); } }"))(setupStaticData.bind(undefined, context), Base);
+				return (new Function("__setup", "__Base", "return class "+className+" extends __Base { constructor(data) { super(); __setup(this, data); } }"))(setup.bind(undefined, context), Base);
 			} else {
 				return (new Function("__Base", "return class "+className+" extends __Base { constructor() { super(); } }"))(Base);
 			}
@@ -499,9 +500,9 @@ export function classFactory (context) {
  * @returns {Class}
  */
 export function buildCloudClassSync (body, getRequest, postRequest, {enableLongPolling = false} = {}) {
+	debug.assert(body).is('object');
 	debug.assert(getRequest).is('function');
 	debug.assert(postRequest).is('function');
-	debug.assert(body).is('object');
 	debug.assert(enableLongPolling).is('boolean');
 
 	let { methods, properties } = parseMethodsAndProperties(body);
@@ -529,13 +530,23 @@ export function buildCloudClassSync (body, getRequest, postRequest, {enableLongP
 /** Get a JS class for this cloud object. It is either found from cache or generated.
  *
  * @param body {object}
- * @param getRequest {function}
- * @param postRequest {function}
+ * @param request {{post: function, get: function}}
  * @param enableLongPolling {boolean}
+ * @param cache {object}
  * @returns {Promise.<Function>}
  */
-export function getCloudClassFromObject (body, getRequest, postRequest, {enableLongPolling = false} = {}) {
+export function getCloudClassFromObject (
+	body
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, cache = CACHE
+	} = {}
+) {
 	return Q.fcall( () => {
+		debug.assert(request).is('object');
+		const postRequest = request.post;
+		const getRequest = request.get;
 		debug.assert(getRequest).is('function');
 		debug.assert(postRequest).is('function');
 		debug.assert(body).is('object');
@@ -553,9 +564,9 @@ export function getCloudClassFromObject (body, getRequest, postRequest, {enableL
 
 		debug.assert(type).is('string');
 
-		let cache1 = CACHE[type];
+		let cache1 = cache[type];
 		if (!_.isObject(cache1)) {
-			cache1 = CACHE[type] = {};
+			cache1 = cache[type] = {};
 		}
 
 		const now = (new Date().getTime());
@@ -592,10 +603,23 @@ export function getCloudClassFromObject (body, getRequest, postRequest, {enableL
  * @param url {string}
  * @param request {{post: function, get: function}}
  * @param enableLongPolling {boolean}
- * @returns {Promise.<function>}
+ * @param getClass {function} Defaults to `getCloudClassFromObject()`
+ * @param prepareRequest {function} Defaults to `createRequestFunctionWithAuthorization()`
+ * @param prepareGetRequest {function} Defaults to `prepareRequest()`
+ * @param preparePostRequest {function} Defaults to `prepareRequest()`
+ * @returns {*}
  */
-export function getCloudClassFromURL (url, request, {enableLongPolling = false} = {}) {
-	request = request || require('./request/index.js');
+export function getCloudClassFromURL (
+	url
+    , request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, getClass = getCloudClassFromObject
+		, prepareRequest = createRequestFunctionWithAuthorization
+		, prepareGetRequest = prepareRequest
+		, preparePostRequest = prepareRequest
+	} = {}
+) {
 	debug.assert(request).is('object');
 	const postRequest = request.post;
 	const getRequest = request.get;
@@ -606,10 +630,10 @@ export function getCloudClassFromURL (url, request, {enableLongPolling = false} 
 	return getRequest(url).then( body => {
 		debug.assert(body).is('object');
 		debug.assert(body.$prototype).is('object');
-		return getCloudClassFromObject(
+		return getClass(
 			body.$prototype
-			, createRequestFunctionWithAuthorization(getRequest, url)
-			, createRequestFunctionWithAuthorization(postRequest, url)
+			, prepareGetRequest(getRequest, url)
+			, preparePostRequest(postRequest, url)
 			, {enableLongPolling}
 		);
 	});
@@ -619,18 +643,28 @@ export function getCloudClassFromURL (url, request, {enableLongPolling = false} 
  * Create an instance of a remote resource from an object.
  *
  * @param body {object}
- * @param getRequest {function}
- * @param postRequest {function}
+ * @param request {{post: function, get: function}}
  * @param enableLongPolling {boolean}
+ * @param getClass {function: Promise}
  * @returns {Promise.<function>}
  */
-export function getCloudInstanceFromObject (body, getRequest, postRequest, {enableLongPolling = false} = {}) {
-	debug.assert(getRequest).is('function');
+export function getCloudInstanceFromObject (
+	body
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, getClass = getCloudClassFromObject
+	} = {}
+) {
+	debug.assert(request).is('object');
+	let postRequest = request.post;
+	let getRequest = request.get;
 	debug.assert(postRequest).is('function');
+	debug.assert(getRequest).is('function');
 	debug.assert(body).is('object');
 	debug.assert(body.$prototype).is('object');
 	debug.assert(enableLongPolling).is('boolean');
-	return getCloudClassFromObject(body.$prototype, getRequest, postRequest, {enableLongPolling}).then(Class => {
+	return getClass(body.$prototype, getRequest, postRequest, {enableLongPolling}).then(Class => {
 		debug.assert(Class).is('function');
 		let instance = new Class(body);
 		debug.assert(instance).is('object');
@@ -644,14 +678,24 @@ export function getCloudInstanceFromObject (body, getRequest, postRequest, {enab
  * @param url {string}
  * @param request {{post: function, get: function}}
  * @param enableLongPolling {boolean}
+ * @param getInstance {function} Defaults to `getCloudInstanceFromObject()`
+ * @param prepareRequest {function} Defaults to `createRequestFunctionWithAuthorization()`
+ * @param prepareGetRequest {function} Defaults to `prepareRequest()`
+ * @param preparePostRequest {function} Defaults to `prepareRequest()`
  * @returns {Promise.<function>}
  */
-export function getCloudInstanceFromURL (url, request, {enableLongPolling = false} = {}) {
+export function getCloudInstanceFromURL (
+	url
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, getInstance = getCloudInstanceFromObject
+		, prepareRequest = createRequestFunctionWithAuthorization
+		, prepareGetRequest = prepareRequest
+		, preparePostRequest = prepareRequest
+	} = {}
+) {
 
-	//console.log('request =', request);
-	debug.assert(request).ignore(undefined).is('object');
-	request = request || require('./request/index.js');
-	//console.log('request =', request);
 	debug.assert(request).is('object');
 	let postRequest = request.post;
 	let getRequest = request.get;
@@ -659,9 +703,9 @@ export function getCloudInstanceFromURL (url, request, {enableLongPolling = fals
 	debug.assert(getRequest).is('function');
 	debug.assert(enableLongPolling).is('boolean');
 
-	getRequest = createRequestFunctionWithAuthorization(getRequest, url);
-	postRequest = createRequestFunctionWithAuthorization(postRequest, url);
-	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest, {enableLongPolling}) );
+	getRequest = prepareGetRequest(getRequest, url);
+	postRequest = preparePostRequest(postRequest, url);
+	return getRequest(url).then(body => getInstance(body, request, {enableLongPolling}) );
 }
 
 /**
@@ -679,28 +723,40 @@ export function isUrl (value) {
  * @param arg {string|object}
  * @param request {{post: function, get: function}|undefined}
  * @param enableLongPolling {boolean}
+ * @param fromObject {function}
+ * @param fromURL {function}
  * @returns {Promise.<function>}
  */
-function cloudClient (arg, request, {enableLongPolling = false} = {}) {
-	debug.assert(request).ignore(undefined).is('object');
-	request = request || require('./request/index.js');
+export function cloudClient (
+	arg
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, fromObject = getCloudInstanceFromObject
+		, fromURL = getCloudInstanceFromURL
+	} = {}
+) {
 	debug.assert(request).is('object');
-	const postRequest = request.post;
-	const getRequest = request.get;
-	debug.assert(postRequest).is('function');
-	debug.assert(getRequest).is('function');
+	debug.assert(request.post).is('function');
+	debug.assert(request.get).is('function');
 	debug.assert(enableLongPolling).is('boolean');
 
-	if (_.isObject(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest, {enableLongPolling});
+	if (_.isObject(arg)) {
+		debug.assert(fromObject).is('function');
+		return fromObject(arg, request, {enableLongPolling});
+	}
 
-	if (isUrl(arg)) return getCloudInstanceFromURL(arg, request, {enableLongPolling});
+	if (isUrl(arg)) {
+		debug.assert(fromURL).is('function');
+		return fromURL(arg, request, {enableLongPolling});
+	}
 
 	throw new TypeError("Argument passed to cloudClient() is unsupported type: " + typeof arg);
 }
 
 /** Get a cloud class from an URL
  *
- * @type {function(Object, Function, Function, {enableLongPolling?: boolean}=): Promise<Function | never>}
+ * @type {function(Object, {post: Function, get: Function}, {enableLongPolling?: boolean}=): Promise<Function | never>}
  */
 cloudClient.fromObject = getCloudInstanceFromObject;
 
@@ -718,7 +774,7 @@ cloudClient.classFromURL = getCloudClassFromURL;
 
 /**
  *
- * @type {function(Object, Function, Function, {enableLongPolling?: boolean}=): *}
+ * @type {function(Object, {post: Function, get: Function}, {enableLongPolling?: boolean}=): *}
  */
 cloudClient.classFromObject = getCloudClassFromObject;
 
