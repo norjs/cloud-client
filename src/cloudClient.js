@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import debug from 'nor-debug';
-import Q from 'q';
+import { Async, promiseCall } from './Async.js';
 import URL from 'url';
 
 /**
@@ -284,7 +284,7 @@ export function parsePayload (result) {
  */
 export function sleep (time) {
 	debug.assert(time).is('number');
-	return Q.Promise( (resolve, reject) => {
+	return Async.Promise( (resolve, reject) => {
 		try {
 			setTimeout(resolve, time);
 		} catch (err) {
@@ -345,9 +345,9 @@ export function longPollData (self, context) {
 		context.__runPoller = true;
 	}
 
-	Q.fcall(() => {
+	Async.done(promiseCall(() => {
 
-		return Q.fcall( () => {
+		return promiseCall( () => {
 			const delay = context.__lastLongPollTime !== undefined ? _.now() - context.__lastLongPollTime : 0;
 			if (delay < LONG_POLLING_MIN_DELAY) {
 				return sleep(LONG_POLLING_MIN_DELAY - delay);
@@ -375,15 +375,16 @@ export function longPollData (self, context) {
 				// Angular throws exceptions in 304
 				if (err && err.status === 304) return;
 
-				return Q.reject(err);
+				return Async.Promise( (resolve, reject) => reject(err) );
 			})
 		);
 
 	}).catch(err => {
 		debug.error('[longPollError] ', err);
-	}).fin(() => {
+	}).finally(() => {
 		if (context.__runPoller) longPollData(self, context);
-	}).done();
+	}));
+
 
 	return () => context.__runPoller = false;
 }
@@ -543,7 +544,7 @@ export function getCloudClassFromObject (
 		, cache = CACHE
 	} = {}
 ) {
-	return Q.fcall( () => {
+	return promiseCall( () => {
 		debug.assert(request).is('object');
 		const postRequest = request.post;
 		const getRequest = request.get;
@@ -777,5 +778,14 @@ cloudClient.classFromURL = getCloudClassFromURL;
  * @type {function(Object, {post: Function, get: Function}, {enableLongPolling?: boolean}=): *}
  */
 cloudClient.classFromObject = getCloudClassFromObject;
+
+/**
+ * Set Promise implementation.
+ *
+ * @param Promise {function} A promise implementation, eg ES6 `Promise` or `Q.Promise`.
+ */
+cloudClient.setPromise = (Promise) => {
+	Async.Promise = Promise;
+};
 
 export default cloudClient;

@@ -1,13 +1,13 @@
-import Q from 'q';
+import { Async } from '../../Async.js';
 
 /** GET request */
 function getRequest (url) {
-	return Q.reject(new Error("No support for GET requests in your environment"));
+	return Async.reject(new Error("No support for GET requests in your environment"));
 }
 
 /** POST request */
 function postRequest (url, data) {
-	return Q.reject(new Error("No support for POST requests in your environment"));
+	return Async.reject(new Error("No support for POST requests in your environment"));
 }
 
 // Exports

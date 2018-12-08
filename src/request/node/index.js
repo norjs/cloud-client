@@ -2,7 +2,7 @@
 
 import _ from 'lodash';
 import debug from 'nor-debug';
-import Q from 'q';
+import Async from '../../Async.js';
 import URL from 'url';
 import HTTPError from '../../HTTPError';
 import LazyProtocolPicker from './LazyProtocolPicker.js';
@@ -78,7 +78,7 @@ function __request_responseListener (req, res, listeners, resolve) {
 	let buffer = "";
 
 	listeners.data = chunk => buffer += chunk;
-	listeners.end = () => resolve( Q.fcall( () => __request_response_endListener(res, listeners, buffer) ));
+	listeners.end = () => resolve( Async.fcall( () => __request_response_endListener(res, listeners, buffer) ));
 
 	res.setEncoding('utf8');
 	res.on('data', listeners.data);
@@ -146,7 +146,7 @@ function __request (resolve, reject, method, url, body, opts={}) {
 
 /** */
 function _request (method, url, body, opts) {
-	return Q.Promise( (resolve, reject) => __request(resolve, reject, method, url, body, opts));
+	return Async.Promise( (resolve, reject) => __request(resolve, reject, method, url, body, opts));
 }
 
 /** GET request */

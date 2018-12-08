@@ -1,7 +1,9 @@
 import _ from 'lodash';
 import sinon from 'sinon';
 import assert from 'assert';
-import Q from 'q';
+
+import { Async } from '../../dist/Async.js';
+
 import {
 	createRequestFunctionWithAuthorization
 	, parseTypeToArray
@@ -52,11 +54,11 @@ function callDestructors (destructors) {
  */
 function stepForward (clock, callback, time) {
 
-	const p = Q.Promise( (resolve, reject) => {
+	const p = Async.Promise( (resolve, reject) => {
 		try {
 			setTimeout(() => {
 				try {
-					Q.fcall(callback).then(resolve).catch(reject).done();
+					Async.done(Async.fcall(callback).then(resolve).catch(reject));
 				} catch (err) {
 					reject(err);
 				}
@@ -418,7 +420,7 @@ describe('cloudClient', () => {
 
 			const getRequest = sinon.stub(context, "getRequest");
 
-			getRequest.onCall(0).returns(Q({
+			getRequest.onCall(0).returns(Async.resolve({
 				_statusCode: 200
 				, $ref: 'https://example.com/path/to/resource'
 				, $hash: '123457'
@@ -427,7 +429,7 @@ describe('cloudClient', () => {
 				}
 			}));
 
-			getRequest.returns(Q({
+			getRequest.returns(Async.resolve({
 				_statusCode: 200
 				, $ref: 'https://example.com/path/to/resource'
 				, $hash: '123458'
@@ -714,7 +716,7 @@ describe('cloudClient', () => {
 
 		it('should create class with method', () => {
 			const getRequest = sinon.stub();
-			const postRequest = sinon.stub().returns(Q.resolve({
+			const postRequest = sinon.stub().returns(Async.resolve({
 				"$id": "c3247bf6-8952-51d9-8388-6377423b1c47",
 				"$hash": "a9b621e28280d72507bf7d84e2af36c300b3b8889e4ad9edc240b2f350ad8dd1",
 				"$ref": "http://localhost:28028/send",
@@ -774,7 +776,7 @@ describe('cloudClient', () => {
 
 			const getRequest = sinon.stub();
 
-			const postRequest = sinon.stub().returns(Q.resolve({
+			const postRequest = sinon.stub().returns(Async.resolve({
 				"$id": "c3247bf6-8952-51d9-8388-6377423b1c47",
 				"$hash": "a9b621e28280d72507bf7d84e2af36c300b3b8889e4ad9edc240b2f350ad8dd1",
 				"$ref": "http://localhost:28028/send",
@@ -930,11 +932,11 @@ describe('cloudClient', () => {
 			};
 
 			const request = {
-				get: sinon.stub().returns(Q.resolve(getResult))
+				get: sinon.stub().returns(Async.resolve(getResult))
 				, post: sinon.stub()
 			};
 
-			const getClass = sinon.stub().returns(Q.resolve(SMTPService));
+			const getClass = sinon.stub().returns(Async.resolve(SMTPService));
 			const prepareGetRequest = sinon.spy(call => call);
 			const preparePostRequest = sinon.spy(call => call);
 
@@ -1002,7 +1004,7 @@ describe('cloudClient', () => {
 				}
 			};
 
-			const getRequest = sinon.stub().returns(Q.resolve({}));
+			const getRequest = sinon.stub().returns(Async.resolve({}));
 			const postRequest = sinon.stub();
 
 			const request = {
@@ -1010,7 +1012,7 @@ describe('cloudClient', () => {
 				, post: postRequest
 			};
 
-			const getClass = sinon.stub().returns(Q.resolve(classes.SMTPService));
+			const getClass = sinon.stub().returns(Async.resolve(classes.SMTPService));
 
 			return getCloudInstanceFromObject(
 				body
@@ -1067,11 +1069,11 @@ describe('cloudClient', () => {
 			};
 
 			const request = {
-				get: sinon.stub().returns(Q.resolve(getResult))
+				get: sinon.stub().returns(Async.resolve(getResult))
 				, post: sinon.stub()
 			};
 
-			const getInstance = sinon.stub().returns(Q.resolve(new SMTPService()));
+			const getInstance = sinon.stub().returns(Async.resolve(new SMTPService()));
 			const prepareGetRequest = sinon.spy(call => call);
 			const preparePostRequest = sinon.spy(call => call);
 
@@ -1165,12 +1167,12 @@ describe('cloudClient', () => {
 			};
 
 			const request = {
-				get: sinon.stub().returns(Q.resolve(getResult))
+				get: sinon.stub().returns(Async.resolve(getResult))
 				, post: sinon.stub()
 			};
 
-			const fromURL = sinon.stub().returns(Q.resolve(new SMTPService()));
-			const fromObject = sinon.stub().returns(Q.resolve(new SMTPService()));
+			const fromURL = sinon.stub().returns(Async.resolve(new SMTPService()));
+			const fromObject = sinon.stub().returns(Async.resolve(new SMTPService()));
 
 			return cloudClient(
 				url
@@ -1226,12 +1228,12 @@ describe('cloudClient', () => {
 			};
 
 			const request = {
-				get: sinon.stub().returns(Q.resolve(result))
+				get: sinon.stub().returns(Async.resolve(result))
 				, post: sinon.stub()
 			};
 
-			const fromURL = sinon.stub().returns(Q.resolve(new SMTPService()));
-			const fromObject = sinon.stub().returns(Q.resolve(new SMTPService()));
+			const fromURL = sinon.stub().returns(Async.resolve(new SMTPService()));
+			const fromObject = sinon.stub().returns(Async.resolve(new SMTPService()));
 
 			return cloudClient(
 				result
