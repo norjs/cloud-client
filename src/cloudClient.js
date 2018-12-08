@@ -136,13 +136,13 @@ const RESERVED = {
  *
  * @type {number}
  */
-const LONG_POLLING_MIN_DELAY = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_MIN_DELAY || 500, 10); // ms
+export const LONG_POLLING_MIN_DELAY = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_MIN_DELAY || 500, 10); // ms
 
 /**
  *
  * @type {number}
  */
-const LONG_POLLING_PREFER_WAIT = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_PREFER_WAIT || 20, 10); // s
+export const LONG_POLLING_PREFER_WAIT = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_PREFER_WAIT || 20, 10); // s
 
 /** Global cache for classes
  *
@@ -283,7 +283,14 @@ export function parsePayload (result) {
  * @private
  */
 export function sleep (time) {
-	return Q.Promise(resolve => setTimeout(resolve, time));
+	debug.assert(time).is('number');
+	return Q.Promise( (resolve, reject) => {
+		try {
+			setTimeout(resolve, time);
+		} catch (err) {
+			reject(err);
+		}
+	});
 }
 
 /**
@@ -318,24 +325,37 @@ export function updateData (self, data) {
  * Start long polling for changes in the remote object.
  *
  * @param self {object} The local class object.
- * @param context {{lastLongPollTime: number, getRequest: function}} A context which can be used to read and set last long poll time.
+ * @param context {Object} Context object
+ * @param context.getRequest {function(url:string, data:object)} Function to call for HTTP GET request
+ * @return {function(): boolean} Destruction function. When called, will no longer continue polling at the next time.
  */
 export function longPollData (self, context) {
+	debug.assert(self).is('object');
 	const url = self.$ref;
 	const etag = self.$hash;
 
-	if (!(url && etag)) return;
+	if (!(url && etag)) {
+		throw new TypeError("Resource did not have $ref nor $hash; cannot long poll.");
+	}
+
+	debug.assert(context).is('object');
+	debug.assert(context.getRequest).is('function');
+
+	if (context.__runPoller === undefined) {
+		context.__runPoller = true;
+	}
 
 	Q.fcall(() => {
 
 		return Q.fcall( () => {
-			const delay = _.now() - context.lastLongPollTime;
+			const delay = context.__lastLongPollTime !== undefined ? _.now() - context.__lastLongPollTime : 0;
 			if (delay < LONG_POLLING_MIN_DELAY) {
 				return sleep(LONG_POLLING_MIN_DELAY - delay);
 			}
 		}).then(
 			() => context.getRequest(url, {wait:LONG_POLLING_PREFER_WAIT, etag}).then(body => {
-				context.lastLongPollTime = _.now();
+
+				context.__lastLongPollTime = _.now();
 
 				const statusCode = body && body._statusCode;
 
@@ -348,7 +368,9 @@ export function longPollData (self, context) {
 
 				debug.error('Warning! Could not update service: ', body);
 
-			}).fail(err => {
+			}).catch(err => {
+
+				context.__lastLongPollTime = _.now();
 
 				// Angular throws exceptions in 304
 				if (err && err.status === 304) return;
@@ -357,11 +379,13 @@ export function longPollData (self, context) {
 			})
 		);
 
-	}).fail(err => {
+	}).catch(err => {
 		debug.error('[longPollError] ', err);
 	}).fin(() => {
-		longPollData(self, context);
+		if (context.__runPoller) longPollData(self, context);
 	}).done();
+
+	return () => context.__runPoller = false;
 }
 
 /**
@@ -398,8 +422,7 @@ export function setupStaticData (context, self, data) {
 	}
 
 	if (context.enableLongPolling) {
-		context.lastLongPollTime = _.now();
-		longPollData(self, context);
+		longPollData(self, context.getRequest);
 	}
 
 }
@@ -488,8 +511,7 @@ export function buildCloudClassSync (body, getRequest, postRequest, {enableLongP
 		methods,
 		properties,
 		getRequest,
-		enableLongPolling,
-		lastLongPollTime: undefined
+		enableLongPolling
 	};
 
 	let Class = classFactory(context);
