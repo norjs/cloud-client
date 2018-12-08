@@ -132,37 +132,67 @@ const RESERVED = {
 
 };
 
-const longPollingMinDelay = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_MIN_DELAY || 500, 10); // ms
-const longPollingPreferWait = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_PREFER_WAIT || 20, 10); // s
+/**
+ *
+ * @type {number}
+ */
+export const LONG_POLLING_MIN_DELAY = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_MIN_DELAY || 500, 10); // ms
 
-/** Global cache for classes */
-const _cache = {};
+/**
+ *
+ * @type {number}
+ */
+export const LONG_POLLING_PREFER_WAIT = parseInt(process.env.CLOUD_CLIENT_LONG_POLLING_PREFER_WAIT || 20, 10); // s
 
-function fixAuthorization (postRequest_, url) {
-	const options = URL.parse(url, true);
-	const auth = options.auth || '';
-	if (!auth) return postRequest_;
+/** Global cache for classes
+ *
+ * @type {{}}
+ */
+const CACHE = {};
 
-	return (realUrl, data) => {
+/**
+ * Returns a wrapper post function which copies authentication information from `url` into
+ * any url which is requested through the new wrapper function.
+ *
+ * If the `url` doesn't contain authentication information, this function returns the `postRequest` directly.
+ *
+ * If the url provided to the returned wrapper function contains authentication information, nothing is copied.
+ *
+ * This function will only copy authentication information if hostname and port are unique.
+ *
+ * @param origCall {function} The request function which will be wrapped
+ * @param origUrl {string} The original URL which may contain authentication information
+ * @returns {function}
+ */
+export function createRequestFunctionWithAuthorization (origCall, origUrl) {
+	const { hostname, auth = '' } = URL.parse(origUrl, true);
+	if (!auth || !hostname) return origCall;
 
-		//console.log('realUrl = ', realUrl);
+	return (url, data) => {
+		let opts = URL.parse(url, true);
 
-		let opts = URL.parse(realUrl, true);
-		const optsAuth = opts.auth || '';
-		if (optsAuth) return postRequest_(realUrl, data);
+		if (opts.auth || hostname !== opts.hostname) {
+			return origCall(url, data);
+		}
 
 		opts.auth = auth;
 
 		const newUrl = URL.format(opts);
-		//console.log('newUrl = ', newUrl);
-		return postRequest_(newUrl, data);
+		return origCall(newUrl, data);
 	};
 }
 
-/** */
-function parse_type (type) {
-	if (_.isArray(type)) return type;
-	if (_.isString(type)) return [type];
+/**
+ * Convert a string value into an array unless it is already an array.
+ *
+ * If it's not an array or string, an empty array is returned.
+ *
+ * @param value {Array.<string>|string}
+ * @returns {Array.<string>}
+ */
+export function parseTypeToArray (value) {
+	if (_.isArray(value)) return value;
+	if (_.isString(value)) return [value];
 	return [];
 }
 
@@ -171,16 +201,27 @@ function parse_type (type) {
  * @param name {string}
  * @return {boolean}
  */
-function isReservedWord (name) {
+export function isReservedWord (name) {
 	return !!_.has(RESERVED, name);
 }
 
-/** */
-function isValidName (name) {
+/**
+ * Returns `true` if `name` is a valid name identifier.
+ *
+ * @param name
+ * @returns {boolean}
+ */
+export function isValidName (name) {
 	return _.isString(name) && /^[a-zA-Z$_][a-zA-Z0-9$_]*$/.test(name);
 }
 
-function assertValidName (name) {
+/**
+ * Validate a name identifier.
+ *
+ * @param name {string}
+ * @throws TypeError if `name` is not a valid name or it is a reserved word.
+ */
+export function assertValidName (name) {
 	if (!isValidName(name)) {
 		throw new TypeError("Name is not a valid name: "+name);
 	}
@@ -189,12 +230,23 @@ function assertValidName (name) {
 	}
 }
 
-/** */
-function isValidClassName (name) {
+/**
+ * Returns `true` if `name` is a valid class name.
+ *
+ * @param name {string}
+ * @return {boolean}
+ */
+export function isValidClassName (name) {
 	return _.isString(name) && /^[a-zA-Z][a-zA-Z0-9$_]*$/.test(name);
 }
 
-function assertValidClassName (className) {
+/**
+ * Verify class name.
+ *
+ * @param className {string}
+ * @throws {TypeError} if `className` is not a valid class name.
+ */
+export function assertValidClassName (className) {
 	if (!isValidClassName(className)) {
 		throw new TypeError("Class name is not a valid name: "+className);
 	}
@@ -203,8 +255,16 @@ function assertValidClassName (className) {
 	}
 }
 
-/** Parse payload from backend */
-const parsePayload = result => {
+/** Parse payload from backend.
+ *
+ * This function parses a payload from result object at place `result.$path` as the type described in `result.$type`.
+ *
+ * At the moment only `"Date"` type is actually converted. Anything else is passed on the same way as after JSON parsing.
+ *
+ * @param result {{$type:string, $path: string}}
+ * @returns {*}
+ */
+export function parsePayload (result) {
 	debug.assert(result).is('object');
 	const payloadType = result.$type;
 	const payloadPath = result.$path;
@@ -215,20 +275,167 @@ const parsePayload = result => {
 	return payload;
 }
 
-function _sleep (time) {
-	return Q.Promise(resolve => setTimeout(resolve, time));
+/**
+ * Returns a promise which will be resolved after `time` milliseconds.
+ *
+ * @param time {number}
+ * @returns {Promise}
+ * @private
+ */
+export function sleep (time) {
+	debug.assert(time).is('number');
+	return Q.Promise( (resolve, reject) => {
+		try {
+			setTimeout(resolve, time);
+		} catch (err) {
+			reject(err);
+		}
+	});
 }
 
-/** */
-export function buildCloudClassSync (body, getRequest_, postRequest_, opts) {
-	//debug.log('body = ', body);
-	debug.assert(getRequest_).is('function');
-	debug.assert(postRequest_).is('function');
+/**
+ * Copies properties from `data` object to `self` object.
+ *
+ * Skips any property which starts with `$` or `_` letters.
+ * Except properties `"$id"` and `"$hash"`, which are copied.
+ *
+ * @param self {{$ref: string}}
+ * @param data {{$ref: string}}
+ */
+export function updateData (self, data) {
 
-	debug.assert(body).is('object');
+	debug.assert(self).is('object');
+	debug.assert(self.$ref).is('url');
 
-	const enableLongPolling = !!(opts && opts.enableLongPolling);
+	debug.assert(data).is('object');
+	debug.assert(data.$ref).is('url').equals(self.$ref);
 
+	_.forEach(_.keys(data), key => {
+		const value = data[key];
+		const firstLetter = (key.length >= 1) ? key[0] : '';
+
+		if ( (key === '$id') || (key === '$hash') || !(firstLetter && (firstLetter === '$' || firstLetter === '_')) ) {
+			self[key] = value;
+		}
+
+	});
+}
+
+/**
+ * Start long polling for changes in the remote object.
+ *
+ * @param self {object} The local class object.
+ * @param context {Object} Context object
+ * @param context.getRequest {function(url:string, data:object)} Function to call for HTTP GET request
+ * @return {function(): boolean} Destruction function. When called, will no longer continue polling at the next time.
+ */
+export function longPollData (self, context) {
+	debug.assert(self).is('object');
+	const url = self.$ref;
+	const etag = self.$hash;
+
+	if (!(url && etag)) {
+		throw new TypeError("Resource did not have $ref nor $hash; cannot long poll.");
+	}
+
+	debug.assert(context).is('object');
+	debug.assert(context.getRequest).is('function');
+
+	if (context.__runPoller === undefined) {
+		context.__runPoller = true;
+	}
+
+	Q.fcall(() => {
+
+		return Q.fcall( () => {
+			const delay = context.__lastLongPollTime !== undefined ? _.now() - context.__lastLongPollTime : 0;
+			if (delay < LONG_POLLING_MIN_DELAY) {
+				return sleep(LONG_POLLING_MIN_DELAY - delay);
+			}
+		}).then(
+			() => context.getRequest(url, {wait:LONG_POLLING_PREFER_WAIT, etag}).then(body => {
+
+				context.__lastLongPollTime = _.now();
+
+				const statusCode = body && body._statusCode;
+
+				// Node implementation doesn't throw an exception when 304 happens
+				if (statusCode === 304) return;
+
+				if (_.isObject(body)) {
+					return updateData(self, body);
+				}
+
+				debug.error('Warning! Could not update service: ', body);
+
+			}).catch(err => {
+
+				context.__lastLongPollTime = _.now();
+
+				// Angular throws exceptions in 304
+				if (err && err.status === 304) return;
+
+				return Q.reject(err);
+			})
+		);
+
+	}).catch(err => {
+		debug.error('[longPollError] ', err);
+	}).fin(() => {
+		if (context.__runPoller) longPollData(self, context);
+	}).done();
+
+	return () => context.__runPoller = false;
+}
+
+/**
+ * Copy static data properties from source object to target object.
+ *
+ * This function also:
+ *
+ *  - copies prototype properties from `context.body`
+ *  - starts long polling if enabled in `context.enableLongPolling`
+ *
+ * @param context {object}
+ * @param self {object} Target object where properties are copied to
+ * @param data {object} Source object where properties are copied from
+ * @return {function(): boolean} Destruction function which will stop long polling, or a no-op function if long polling was not enabled.
+ * @private
+ */
+export function setupStaticData (context, self, data) {
+
+	// Copy properties from prototype
+	_.forEach(context.properties, key => {
+		const firstLetter = key && key.length >= 1 ? key[0] : '';
+		if (firstLetter === '$' || firstLetter === '_') return;
+		self[key] = _.cloneDeep(context.body[key])
+	});
+
+	// Copy properties from provided instance (arguments to constructor)
+	if (_.isObject(data)) {
+		_.forEach(Object.keys(data), key => {
+			const firstLetter = key && key.length >= 1 ? key[0] : '';
+			if (firstLetter === '_' || key === '$prototype') return;
+			self[key] = _.cloneDeep(data[key]);
+		});
+	}
+
+	if (context.enableLongPolling) {
+		return longPollData(self, context.getRequest);
+	}
+
+	return () => {};
+}
+
+/**
+ * Filter names of keywords in `body` to arrays based on their value $type.
+ *
+ * Functions are added to `methods` and non-functions to `properties`.
+ *
+ * @param body {object}
+ * @returns {{methods: Array.<string>, properties: Array.<string>}}
+ */
+export function parseMethodsAndProperties (body) {
 	let methods = [];
 	let properties = [];
 
@@ -239,151 +446,112 @@ export function buildCloudClassSync (body, getRequest_, postRequest_, opts) {
 		(isMethod ? methods : properties).push(key);
 	});
 
-	const __updateData = (self, data) => {
-		//debug.log('__updateData(', self, ', ', data, ')');
+	return {methods, properties};
+}
 
-		debug.assert(self).is('object');
-		debug.assert(data).is('object');
+/**
+ * Create a class function from context data.
+ *
+ * @param context {object}
+ * @returns {*}
+ * @param setup {function(context, self, data): function}
+ */
+export function classFactory (context, {setup = setupStaticData} = {}) {
+	let firstClassName;
+	const types = parseTypeToArray(context.body.$type);
+	switch(types.length) {
 
-		debug.assert(self.$ref).is('url');
-		debug.assert(data.$ref).is('url').equals(self.$ref);
-
-		_.forEach(_.keys(data), key => {
-			const value = data[key];
-
-			if ( (key === '$id') || (key === '$hash') ) {
-				self[key] = value;
-				return;
+	case 0:
+		return class {
+			constructor(data) {
+				setup(context, this, data);
 			}
+		};
 
-			const firstLetter = (key.length >= 1) ? key.substr(0, 1) : '';
-			if (firstLetter === '$') return;
-			if (firstLetter === '_') return;
+	case 1:
+		firstClassName = _.first(types);
+		assertValidClassName(firstClassName);
+		return (new Function("__setup", "return class "+firstClassName+" { constructor(data) { __setup(this, data); } }"))(setup.bind(undefined, context));
 
-			self[key] = value;
-		});
-	};
-
-	let __lastLongPollTime = _.now();
-
-	const __longPollData = self => {
-		//debug.log('__longPollData(', self, ')');
-
-		const url = self.$ref;
-		const etag = self.$hash;
-
-		if (!(url && etag)) return;
-
-		Q.fcall(() => {
-
-			return Q.fcall( () => {
-				const delay = _.now() - __lastLongPollTime;
-				if (delay < longPollingMinDelay) {
-					return _sleep(longPollingMinDelay - delay);
-				}
-			}).then(
-				() => getRequest_(url, {wait:longPollingPreferWait, etag}).then(body => {
-					__lastLongPollTime = _.now();
-
-					//debug.log('body = ', body);
-
-					const statusCode = body && body._statusCode;
-
-					// Node implementation doesn't throw an exception when 304 happens
-					if (statusCode === 304) return;
-					if (_.isObject(body)) return __updateData(self, body);
-
-					debug.error('Warning! Could not update service: ', body);
-
-				}).fail(err => {
-
-					// Angular throws exceptions in 304
-					if (err && err.status === 304) return;
-
-					return Q.reject(err);
-				})
-			);
-
-		}).fail(err => {
-			debug.error('[longPollError] ', err);
-		}).fin(() => {
-			__longPollData(self);
-		}).done();
-	};
-
-	const __setupStaticData = (self, data) => {
-
-		// Copy properties from prototype
-		_.forEach(properties, key => {
-			const firstLetter = key && key.length >= 1 ? key[0] : '';
-			if (firstLetter === '$') return;
-			if (firstLetter === '_') return;
-			self[key] = _.cloneDeep(body[key])
-		});
-
-		// Copy properties from provided instance (arguments to constructor)
-		if (_.isObject(data)) {
-			_.forEach(Object.keys(data), key => {
-				const firstLetter = key && key.length >= 1 ? key[0] : '';
-				//if (firstLetter === '$') return;
-				if (firstLetter === '_') return;
-				if (key === '$prototype') return;
-				self[key] = _.cloneDeep(data[key]);
-			});
-		}
-
-		if (enableLongPolling) __longPollData(self);
-	};
-
-	let Class;
-	const types = parse_type(body.$type);
-	//const constructorArgs = _.isArray(body.$args) ? body.$args : [];
-	//const constructorArgsStr = constructorArgs.join(', ');
-	if (types.length === 0) {
-		Class = class {constructor(data) { __setupStaticData(this, data); }};
-	} else if (types.length === 1) {
-		const className = _.first(types);
-		assertValidClassName(className);
-		Class = (new Function("__setupStaticData", "return class "+className+" { constructor(data) { __setupStaticData(this, data); } }"))(__setupStaticData);
-	} else {
-		const firstClassName = _.first(types);
-		Class = _.reduceRight(types, (Base, className) => {
+	default:
+		firstClassName = _.first(types);
+		return _.reduceRight(types, (Base, className) => {
 			assertValidClassName(className);
 			if (Base === undefined) {
 				return (new Function("return class "+className+" {}"))();
 			}
 			debug.assert(Base).is('function');
 			if (firstClassName === className) {
-				return (new Function("__setupStaticData", "__Base", "return class "+className+" extends __Base { constructor(data) { super(); __setupStaticData(this, data); } }"))(__setupStaticData, Base);
+				return (new Function("__setup", "__Base", "return class "+className+" extends __Base { constructor(data) { super(); __setup(this, data); } }"))(setup.bind(undefined, context), Base);
 			} else {
 				return (new Function("__Base", "return class "+className+" extends __Base { constructor() { super(); } }"))(Base);
 			}
 		}, undefined);
 	}
+}
+
+/**
+ * Returns a Class function from a remote resource.
+ *
+ * @param body {object}
+ * @param getRequest {function}
+ * @param postRequest {function}
+ * @param enableLongPolling {boolean}
+ * @returns {Class}
+ */
+export function buildCloudClassSync (body, getRequest, postRequest, {enableLongPolling = false} = {}) {
+	debug.assert(body).is('object');
+	debug.assert(getRequest).is('function');
+	debug.assert(postRequest).is('function');
+	debug.assert(enableLongPolling).is('boolean');
+
+	let { methods, properties } = parseMethodsAndProperties(body);
+
+	const context = {
+		body,
+		methods,
+		properties,
+		getRequest,
+		enableLongPolling
+	};
+
+	let Class = classFactory(context);
 
 	// Add prototype methods
 	_.forEach(methods, key => {
 		const baseUrl = body.$ref || url;
 		const methodUrl = (baseUrl && (baseUrl.length >= 1) && (baseUrl[baseUrl.length-1] === '/')) ? baseUrl + key : baseUrl + '/' + key;
-		Class.prototype[key] = (...$args) => postRequest_(methodUrl, {$args}).then(parsePayload);
+		Class.prototype[key] = (...$args) => postRequest(methodUrl, {$args}).then(parsePayload);
 	});
 
 	return Class;
 }
 
-export function buildCloudClass (body, getRequest_, postRequest_, opts) {
-	debug.assert(getRequest_).is('function');
-	debug.assert(postRequest_).is('function');
-	return Q.when(buildCloudClassSync(body, getRequest_, postRequest_, opts));
-}
-
-/** Get a JS class for this cloud object. It is either found from cache or generated. */
-export function getCloudClassFromObject (body, getRequest_, postRequest_, opts) {
+/** Get a JS class for this cloud object. It is either found from cache or generated.
+ *
+ * @param body {object}
+ * @param request {{post: function, get: function}}
+ * @param enableLongPolling {boolean}
+ * @param cache {object}
+ * @returns {Promise.<Function>}
+ */
+export function getCloudClassFromObject (
+	body
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, cache = CACHE
+	} = {}
+) {
 	return Q.fcall( () => {
-		debug.assert(getRequest_).is('function');
-		debug.assert(postRequest_).is('function');
+		debug.assert(request).is('object');
+		const postRequest = request.post;
+		const getRequest = request.get;
+		debug.assert(getRequest).is('function');
+		debug.assert(postRequest).is('function');
 		debug.assert(body).is('object');
 		debug.assert(body.$id).is('uuid');
+		debug.assert(enableLongPolling).is('boolean');
 
 		let type;
 		if (!_.isArray(body.$type)) {
@@ -396,9 +564,9 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_, opts) 
 
 		debug.assert(type).is('string');
 
-		let cache1 = _cache[type];
+		let cache1 = cache[type];
 		if (!_.isObject(cache1)) {
-			cache1 = _cache[type] = {};
+			cache1 = cache[type] = {};
 		}
 
 		const now = (new Date().getTime());
@@ -421,7 +589,7 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_, opts) 
 		cache2 = cache1[id] = {
 			name: type,
 			id,
-			Type: buildCloudClassSync(body, getRequest_, postRequest_, opts),
+			Type: buildCloudClassSync(body, getRequest, postRequest, {enableLongPolling}),
 			time: now
 		};
 
@@ -429,27 +597,74 @@ export function getCloudClassFromObject (body, getRequest_, postRequest_, opts) 
 	});
 }
 
-export function getCloudClassFromURL (url, request, opts) {
-	request = request || require('./request/index.js');
+/**
+ * Create a Class from a remote resource using an URL.
+ *
+ * @param url {string}
+ * @param request {{post: function, get: function}}
+ * @param enableLongPolling {boolean}
+ * @param getClass {function} Defaults to `getCloudClassFromObject()`
+ * @param prepareRequest {function} Defaults to `createRequestFunctionWithAuthorization()`
+ * @param prepareGetRequest {function} Defaults to `prepareRequest()`
+ * @param preparePostRequest {function} Defaults to `prepareRequest()`
+ * @returns {*}
+ */
+export function getCloudClassFromURL (
+	url
+    , request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, getClass = getCloudClassFromObject
+		, prepareRequest = createRequestFunctionWithAuthorization
+		, prepareGetRequest = prepareRequest
+		, preparePostRequest = prepareRequest
+	} = {}
+) {
 	debug.assert(request).is('object');
 	const postRequest = request.post;
 	const getRequest = request.get;
 	debug.assert(postRequest).is('function');
 	debug.assert(getRequest).is('function');
+	debug.assert(enableLongPolling).is('boolean');
 
 	return getRequest(url).then( body => {
 		debug.assert(body).is('object');
 		debug.assert(body.$prototype).is('object');
-		return getCloudClassFromObject(body.$prototype, fixAuthorization(getRequest, url), fixAuthorization(postRequest, url), opts);
+		return getClass(
+			body.$prototype
+			, prepareGetRequest(getRequest, url)
+			, preparePostRequest(postRequest, url)
+			, {enableLongPolling}
+		);
 	});
 }
 
-export function getCloudInstanceFromObject (body, getRequest_, postRequest_, opts) {
-	debug.assert(getRequest_).is('function');
-	debug.assert(postRequest_).is('function');
+/**
+ * Create an instance of a remote resource from an object.
+ *
+ * @param body {object}
+ * @param request {{post: function, get: function}}
+ * @param enableLongPolling {boolean}
+ * @param getClass {function: Promise}
+ * @returns {Promise.<function>}
+ */
+export function getCloudInstanceFromObject (
+	body
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, getClass = getCloudClassFromObject
+	} = {}
+) {
+	debug.assert(request).is('object');
+	let postRequest = request.post;
+	let getRequest = request.get;
+	debug.assert(postRequest).is('function');
+	debug.assert(getRequest).is('function');
 	debug.assert(body).is('object');
 	debug.assert(body.$prototype).is('object');
-	return getCloudClassFromObject(body.$prototype, getRequest_, postRequest_, opts).then(Class => {
+	debug.assert(enableLongPolling).is('boolean');
+	return getClass(body.$prototype, getRequest, postRequest, {enableLongPolling}).then(Class => {
 		debug.assert(Class).is('function');
 		let instance = new Class(body);
 		debug.assert(instance).is('object');
@@ -457,21 +672,40 @@ export function getCloudInstanceFromObject (body, getRequest_, postRequest_, opt
 	});
 }
 
-export function getCloudInstanceFromURL (url, request, opts) {
+/**
+ * Create an instance of a remote resource using an URL.
+ *
+ * @param url {string}
+ * @param request {{post: function, get: function}}
+ * @param enableLongPolling {boolean}
+ * @param getInstance {function} Defaults to `getCloudInstanceFromObject()`
+ * @param prepareRequest {function} Defaults to `createRequestFunctionWithAuthorization()`
+ * @param prepareGetRequest {function} Defaults to `prepareRequest()`
+ * @param preparePostRequest {function} Defaults to `prepareRequest()`
+ * @returns {Promise.<function>}
+ */
+export function getCloudInstanceFromURL (
+	url
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, getInstance = getCloudInstanceFromObject
+		, prepareRequest = createRequestFunctionWithAuthorization
+		, prepareGetRequest = prepareRequest
+		, preparePostRequest = prepareRequest
+	} = {}
+) {
 
-	//console.log('request =', request);
-	debug.assert(request).ignore(undefined).is('object');
-	request = request || require('./request/index.js');
-	//console.log('request =', request);
 	debug.assert(request).is('object');
 	let postRequest = request.post;
 	let getRequest = request.get;
 	debug.assert(postRequest).is('function');
 	debug.assert(getRequest).is('function');
+	debug.assert(enableLongPolling).is('boolean');
 
-	getRequest = fixAuthorization(getRequest, url);
-	postRequest = fixAuthorization(postRequest, url);
-	return getRequest(url).then(body => getCloudInstanceFromObject(body, getRequest, postRequest, opts) );
+	getRequest = prepareGetRequest(getRequest, url);
+	postRequest = preparePostRequest(postRequest, url);
+	return getRequest(url).then(body => getInstance(body, request, {enableLongPolling}) );
 }
 
 /**
@@ -480,35 +714,68 @@ export function getCloudInstanceFromURL (url, request, opts) {
  * @param value {string}
  * @returns {boolean}
  */
-function isUrl (value) {
+export function isUrl (value) {
 	return _.isString(value) && /^(ftp|https?):\/\//.test(value);
 }
 
-/** Get a JS class for this cloud object. It is either found from cache or generated. */
-function cloudClient (arg, request, opts) {
-
-	debug.assert(request).ignore(undefined).is('object');
-	debug.assert(opts).ignore(undefined).is('object');
-
-	//console.log('request = ', request);
-	request = request || require('./request/index.js');
-	//console.log('request = ', request);
+/** Get a JS class for this cloud object. It is either found from cache or generated.
+ *
+ * @param arg {string|object}
+ * @param request {{post: function, get: function}|undefined}
+ * @param enableLongPolling {boolean}
+ * @param fromObject {function}
+ * @param fromURL {function}
+ * @returns {Promise.<function>}
+ */
+export function cloudClient (
+	arg
+	, request = require('./request/index.js')
+	, {
+		enableLongPolling = false
+		, fromObject = getCloudInstanceFromObject
+		, fromURL = getCloudInstanceFromURL
+	} = {}
+) {
 	debug.assert(request).is('object');
-	const postRequest = request.post;
-	const getRequest = request.get;
-	debug.assert(postRequest).is('function');
-	debug.assert(getRequest).is('function');
+	debug.assert(request.post).is('function');
+	debug.assert(request.get).is('function');
+	debug.assert(enableLongPolling).is('boolean');
 
-	if (_.isObject(arg)) return getCloudInstanceFromObject(arg, getRequest, postRequest, opts);
-	if (isUrl(arg)) return getCloudInstanceFromURL(arg, request, opts);
+	if (_.isObject(arg)) {
+		debug.assert(fromObject).is('function');
+		return fromObject(arg, request, {enableLongPolling});
+	}
+
+	if (isUrl(arg)) {
+		debug.assert(fromURL).is('function');
+		return fromURL(arg, request, {enableLongPolling});
+	}
+
 	throw new TypeError("Argument passed to cloudClient() is unsupported type: " + typeof arg);
 }
 
-/** Get a cloud class from an URL */
+/** Get a cloud class from an URL
+ *
+ * @type {function(Object, {post: Function, get: Function}, {enableLongPolling?: boolean}=): Promise<Function | never>}
+ */
 cloudClient.fromObject = getCloudInstanceFromObject;
+
+/**
+ *
+ * @type {function(string, {post: Function, get: Function}, {enableLongPolling?: boolean}=): *}
+ */
 cloudClient.fromURL = getCloudInstanceFromURL;
 
+/**
+ *
+ * @type {function(string, {post: Function, get: Function}, {enableLongPolling?: boolean}=): *}
+ */
 cloudClient.classFromURL = getCloudClassFromURL;
+
+/**
+ *
+ * @type {function(Object, {post: Function, get: Function}, {enableLongPolling?: boolean}=): *}
+ */
 cloudClient.classFromObject = getCloudClassFromObject;
 
 export default cloudClient;
