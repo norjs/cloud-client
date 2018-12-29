@@ -1,5 +1,5 @@
 import angular from 'angular';
-import debug from 'nor-debug';
+import debug from '@norjs/debug';
 import { Async } from '../../Async.js';
 
 /** Angular to our promise wrapper */

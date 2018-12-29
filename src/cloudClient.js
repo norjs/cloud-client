@@ -1,5 +1,5 @@
 import _ from 'lodash';
-import debug from 'nor-debug';
+import debug from '@norjs/debug';
 import { Async, promiseCall } from './Async.js';
 import URL from 'url';
 
