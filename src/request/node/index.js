@@ -1,7 +1,7 @@
 /** HTTP/HTTPS requests */
 
 import _ from 'lodash';
-import debug from 'nor-debug';
+import debug from '@norjs/debug';
 import Async from '../../Async.js';
 import URL from 'url';
 import HTTPError from '../../HTTPError';
